@@ -5,5 +5,6 @@ import (
 )
 
 func InitRoutes(e *echo.Echo) {
+	InitAccountRoutes(e)
 	InitScanRoutes(e)
 }
