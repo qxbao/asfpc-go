@@ -1,0 +1,70 @@
+package services
+
+import (
+	"database/sql"
+	"log"
+	"os"
+	"github.com/labstack/echo/v4"
+	"github.com/qxbao/asfpc/routes"
+	_ "github.com/lib/pq"
+)
+
+type Server struct {
+	Port     *string
+	Host     *string
+	Database *sql.DB
+	RouterHandler *echo.Echo
+}
+
+func (s *Server) Run() {
+	if err := s.initDB(); err != nil {
+		log.Fatal("Failed to connect to the database:", err)
+	}
+	s.start()
+}
+
+func (s *Server) start() {
+	e := echo.New()
+	s.RouterHandler = e
+	if err := s.initRoute(); err != nil {
+		log.Fatal("Failed to initialize routes:", err)
+	}
+	HOST := os.Getenv("HOST")
+	PORT := os.Getenv("PORT")
+
+	if s.Host == nil {
+		s.Host = &HOST
+	}
+	if s.Port == nil {
+		s.Port = &PORT
+	}
+	e.Logger.Fatal(e.Start(*s.Host + ":" + *s.Port))
+}
+
+func (s *Server) initDB() error {
+	pgUser := os.Getenv("POSTGRE_USER")
+	pgPassword := os.Getenv("POSTGRE_PASSWORD")
+	pgDBName := os.Getenv("POSTGRE_DBNAME")
+	pgHost := os.Getenv("POSTGRE_HOST")
+	pgPort := os.Getenv("POSTGRE_PORT")
+	dataSourceName := "postgres://" + pgUser + ":" + pgPassword + "@" + pgHost + ":" + pgPort + "/" + pgDBName + "?sslmode=disable"
+	db, err := sql.Open("postgres", dataSourceName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s.Database = db
+	err = s.Database.Ping()
+
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		log.Println("Connected to the database successfully!")
+	}
+	return nil
+}
+
+func (s *Server) initRoute() error {
+	routes.InitRoutes(s.RouterHandler)
+	return nil
+}
