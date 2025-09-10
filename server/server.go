@@ -1,19 +1,18 @@
-package services
+package server
 
 import (
 	"database/sql"
 	"log"
 	"os"
 	"github.com/labstack/echo/v4"
-	"github.com/qxbao/asfpc/routes"
 	_ "github.com/lib/pq"
+	"github.com/qxbao/asfpc/db"
+	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/routes"
 )
 
 type Server struct {
-	Port     *string
-	Host     *string
-	Database *sql.DB
-	RouterHandler *echo.Echo
+	infras.Server
 }
 
 func (s *Server) Run() {
@@ -25,7 +24,7 @@ func (s *Server) Run() {
 
 func (s *Server) start() {
 	e := echo.New()
-	s.RouterHandler = e
+	s.Echo = e
 	if err := s.initRoute(); err != nil {
 		log.Fatal("Failed to initialize routes:", err)
 	}
@@ -35,9 +34,12 @@ func (s *Server) start() {
 	if s.Host == nil {
 		s.Host = &HOST
 	}
+
 	if s.Port == nil {
 		s.Port = &PORT
 	}
+
+	defer s.Database.Close()
 	e.Logger.Fatal(e.Start(*s.Host + ":" + *s.Port))
 }
 
@@ -48,23 +50,27 @@ func (s *Server) initDB() error {
 	pgHost := os.Getenv("POSTGRE_HOST")
 	pgPort := os.Getenv("POSTGRE_PORT")
 	dataSourceName := "postgres://" + pgUser + ":" + pgPassword + "@" + pgHost + ":" + pgPort + "/" + pgDBName + "?sslmode=disable"
-	db, err := sql.Open("postgres", dataSourceName)
+	database, err := sql.Open("postgres", dataSourceName)
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	s.Database = db
-	err = s.Database.Ping()
-
+	err = database.Ping()
 	if err != nil {
 		log.Fatal(err)
 	} else {
 		log.Println("Connected to the database successfully!")
 	}
+
+	s.Database = database
+	s.Queries = db.New(database)
+
 	return nil
 }
 
-func (s *Server) initRoute() error {
-	routes.InitRoutes(s.RouterHandler)
+func (s Server) initRoute() error {
+	routes.InitAccountRoutes(s.Server)
+	routes.InitScanRoutes(s.Echo)
 	return nil
 }

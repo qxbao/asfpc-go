@@ -9,7 +9,7 @@ import (
 
 func InitScanRoutes(e *echo.Echo) {
 	e.POST("/scan/posts", func(c echo.Context) error {
-		account := new(infras.AccountRequest)
+		account := new(infras.CreateAccountDTO)
 
 		if err := c.Bind(account); err != nil {
 			return c.String(http.StatusBadRequest, "Invalid request body")

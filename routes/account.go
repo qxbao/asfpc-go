@@ -1,25 +1,55 @@
 package routes
 
 import (
-	"github.com/labstack/echo/v4"
-	"github.com/qxbao/asfpc/infras"
+	"context"
+	"database/sql"
 	"net/http"
-	"encoding/json"
+	"time"
+	"github.com/labstack/echo/v4"
+	"github.com/qxbao/asfpc/db"
+	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/services"
 )
 
-func InitAccountRoutes(e *echo.Echo) {
-	e.POST("/account", func(c echo.Context) error {
-		account := new(infras.AccountRequest)
-		if err := c.Bind(account); err != nil {
+func InitAccountRoutes(s infras.Server) {
+	e := s.Echo
+	queries := s.Queries
+	e.POST("/account/add", func(c echo.Context) error {
+		dto := new(infras.CreateAccountDTO)
+
+		if err := c.Bind(dto); err != nil {
 			return c.String(http.StatusBadRequest, "Invalid request body")
 		}
-
-		if account.Username == nil || account.Password == nil {
-			return c.String(http.StatusBadRequest, "Username and Password are required")
+		if dto.Username == nil || dto.Password == nil {
+			return c.String(http.StatusBadRequest, "Username and password are required")
 		}
 
-		account_val, _ := json.Marshal(account)
+		ua := services.GenerateModernChromeUA()
 
-		return c.String(http.StatusOK, "Account created successfully {account: "+string(account_val)+"}")
+		params := db.CreateAccountParams{
+			Email:       *dto.Email,
+			Username:    *dto.Username,
+			Password:    *dto.Password,
+			IsBlock:     false,
+			Ua:          ua,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			AccessToken: sql.NullString{Valid: false},
+			ProxyID:     sql.NullInt32{Valid: false},
+		}
+
+		account, err := queries.CreateAccount(context.Background(), params)
+
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]any{
+				"error": "Failed to create account: " + err.Error(),
+			})
+		}
+
+		return c.JSON(http.StatusOK, map[string]any{
+			"message":    "Account created successfully",
+			"account":    account,
+			"user_agent": ua, // Show the generated user agent
+		})
 	})
 }
