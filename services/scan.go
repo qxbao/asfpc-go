@@ -174,11 +174,9 @@ func ScanPostComments(s infras.Server, c echo.Context) error {
 				return
 			}
 
-			commentID := strings.Split(*comment.ID, "_")[1]
-
 			queries.CreateComment(c.Request().Context(), db.CreateCommentParams{
 				PostID:    post.ID,
-				CommentID: commentID,
+				CommentID: *comment.ID,
 				Content:   content,
 				CreatedAt: createdTime,
 				AuthorID:  author.ID,
