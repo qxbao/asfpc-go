@@ -7,6 +7,8 @@ package db
 import (
 	"database/sql"
 	"time"
+
+	"github.com/sqlc-dev/pqtype"
 )
 
 type Account struct {
@@ -18,8 +20,76 @@ type Account struct {
 	Ua          string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Cookies     pqtype.NullRawMessage
 	AccessToken sql.NullString
 	ProxyID     sql.NullInt32
+}
+
+type Comment struct {
+	ID         int32
+	Content    string
+	IsAnalyzed bool
+	CreatedAt  time.Time
+	InsertedAt time.Time
+	PostID     int32
+	AuthorID   int32
+	CommentID  string
+}
+
+type Config struct {
+	ID    int32
+	Key   string
+	Value string
+}
+
+type FinancialAnalysis struct {
+	ID                   int32
+	FinancialStatus      string
+	ConfidenceScore      float64
+	AnalysisSummary      string
+	Indicators           pqtype.NullRawMessage
+	GeminiModelUsed      string
+	PromptTokensUsed     sql.NullInt32
+	PromptUsedID         int32
+	CompletionTokensUsed sql.NullInt32
+	TotalTokensUsed      sql.NullInt32
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	UserProfileID        int32
+}
+
+type Group struct {
+	ID        int32
+	GroupID   string
+	GroupName string
+	IsJoined  bool
+	AccountID sql.NullInt32
+}
+
+type Image struct {
+	ID         int32
+	Path       string
+	IsAnalyzed bool
+	BelongToID int32
+}
+
+type Post struct {
+	ID         int32
+	PostID     string
+	Content    string
+	CreatedAt  time.Time
+	InsertedAt time.Time
+	GroupID    int32
+	IsAnalyzed bool
+}
+
+type Prompt struct {
+	ID          int32
+	Content     string
+	ServiceName string
+	Version     int32
+	CreatedBy   string
+	CreatedAt   time.Time
 }
 
 type Proxy struct {
@@ -31,4 +101,23 @@ type Proxy struct {
 	IsActive  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type UserProfile struct {
+	ID                 int32
+	FacebookID         string
+	Name               sql.NullString
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	ProfileUrl         string
+	ProfilePictureUrl  sql.NullString
+	FriendsCount       sql.NullInt32
+	IsVerified         bool
+	LastScraped        time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ScrapedByID        int32
 }

@@ -8,6 +8,8 @@ require (
 	github.com/lib/pq v1.10.9
 )
 
+require github.com/sqlc-dev/pqtype v0.3.0 // direct
+
 require (
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -18,4 +20,5 @@ require (
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
+	resty.dev/v3 v3.0.0-beta.3 // direct
 )

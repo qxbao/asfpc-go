@@ -5,10 +5,10 @@ import (
 	"log"
 	"os"
 	"github.com/labstack/echo/v4"
-	_ "github.com/lib/pq"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/routes"
+	_ "github.com/lib/pq"
 )
 
 type Server struct {
@@ -71,6 +71,6 @@ func (s *Server) initDB() error {
 
 func (s Server) initRoute() error {
 	routes.InitAccountRoutes(s.Server)
-	routes.InitScanRoutes(s.Echo)
+	routes.InitScanRoutes(s.Server)
 	return nil
 }

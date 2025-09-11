@@ -14,3 +14,22 @@ UPDATE public.account
 SET updated_at = NOW(), access_token = $2
 WHERE id = $1
 RETURNING *;
+
+-- name: CreateGroup :one
+INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
+VALUES ($1, $2, false, $3)
+RETURNING *;
+
+-- name: GetGroupById :one
+SELECT * FROM public."group" WHERE id = $1;
+
+-- name: GetGroupByIdWithAccount :one
+SELECT g.*, a.* FROM public."group" g
+JOIN public.account a ON g.account_id = a.id
+WHERE g.id = $1;
+
+-- name: CreatePost :one
+INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
+VALUES ($1, $2, $3, NOW(), $4, false)
+RETURNING *;
+

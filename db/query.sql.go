@@ -9,12 +9,14 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/sqlc-dev/pqtype"
 )
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO public.account (email, username, password, is_block, ua, created_at, updated_at, access_token, proxy_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, email, username, password, is_block, ua, created_at, updated_at, access_token, proxy_id
+RETURNING id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id
 `
 
 type CreateAccountParams struct {
@@ -51,14 +53,73 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Ua,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cookies,
 		&i.AccessToken,
 		&i.ProxyID,
 	)
 	return i, err
 }
 
+const createGroup = `-- name: CreateGroup :one
+INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
+VALUES ($1, $2, false, $3)
+RETURNING id, group_id, group_name, is_joined, account_id
+`
+
+type CreateGroupParams struct {
+	GroupID   string
+	GroupName string
+	AccountID sql.NullInt32
+}
+
+func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error) {
+	row := q.db.QueryRowContext(ctx, createGroup, arg.GroupID, arg.GroupName, arg.AccountID)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.GroupName,
+		&i.IsJoined,
+		&i.AccountID,
+	)
+	return i, err
+}
+
+const createPost = `-- name: CreatePost :one
+INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
+VALUES ($1, $2, $3, NOW(), $4, false)
+RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed
+`
+
+type CreatePostParams struct {
+	PostID    string
+	Content   string
+	CreatedAt time.Time
+	GroupID   int32
+}
+
+func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
+	row := q.db.QueryRowContext(ctx, createPost,
+		arg.PostID,
+		arg.Content,
+		arg.CreatedAt,
+		arg.GroupID,
+	)
+	var i Post
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.InsertedAt,
+		&i.GroupID,
+		&i.IsAnalyzed,
+	)
+	return i, err
+}
+
 const getAccountById = `-- name: GetAccountById :one
-SELECT id, email, username, password, is_block, ua, created_at, updated_at, access_token, proxy_id FROM public.account WHERE id = $1
+SELECT id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id FROM public.account WHERE id = $1
 `
 
 func (q *Queries) GetAccountById(ctx context.Context, id int32) (Account, error) {
@@ -73,6 +134,7 @@ func (q *Queries) GetAccountById(ctx context.Context, id int32) (Account, error)
 		&i.Ua,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cookies,
 		&i.AccessToken,
 		&i.ProxyID,
 	)
@@ -80,7 +142,7 @@ func (q *Queries) GetAccountById(ctx context.Context, id int32) (Account, error)
 }
 
 const getAccounts = `-- name: GetAccounts :many
-SELECT id, email, username, password, is_block, ua, created_at, updated_at, access_token, proxy_id FROM public.account ORDER BY id LIMIT $1 OFFSET $2
+SELECT id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id FROM public.account ORDER BY id LIMIT $1 OFFSET $2
 `
 
 type GetAccountsParams struct {
@@ -106,6 +168,7 @@ func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]Acc
 			&i.Ua,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Cookies,
 			&i.AccessToken,
 			&i.ProxyID,
 		); err != nil {
@@ -122,11 +185,77 @@ func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]Acc
 	return items, nil
 }
 
+const getGroupById = `-- name: GetGroupById :one
+SELECT id, group_id, group_name, is_joined, account_id FROM public."group" WHERE id = $1
+`
+
+func (q *Queries) GetGroupById(ctx context.Context, id int32) (Group, error) {
+	row := q.db.QueryRowContext(ctx, getGroupById, id)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.GroupName,
+		&i.IsJoined,
+		&i.AccountID,
+	)
+	return i, err
+}
+
+const getGroupByIdWithAccount = `-- name: GetGroupByIdWithAccount :one
+SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, a.id, a.email, a.username, a.password, a.is_block, a.ua, a.created_at, a.updated_at, a.cookies, a.access_token, a.proxy_id FROM public."group" g
+JOIN public.account a ON g.account_id = a.id
+WHERE g.id = $1
+`
+
+type GetGroupByIdWithAccountRow struct {
+	ID          int32
+	GroupID     string
+	GroupName   string
+	IsJoined    bool
+	AccountID   sql.NullInt32
+	ID_2        int32
+	Email       string
+	Username    string
+	Password    string
+	IsBlock     bool
+	Ua          string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Cookies     pqtype.NullRawMessage
+	AccessToken sql.NullString
+	ProxyID     sql.NullInt32
+}
+
+func (q *Queries) GetGroupByIdWithAccount(ctx context.Context, id int32) (GetGroupByIdWithAccountRow, error) {
+	row := q.db.QueryRowContext(ctx, getGroupByIdWithAccount, id)
+	var i GetGroupByIdWithAccountRow
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.GroupName,
+		&i.IsJoined,
+		&i.AccountID,
+		&i.ID_2,
+		&i.Email,
+		&i.Username,
+		&i.Password,
+		&i.IsBlock,
+		&i.Ua,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Cookies,
+		&i.AccessToken,
+		&i.ProxyID,
+	)
+	return i, err
+}
+
 const updateAccountAccessToken = `-- name: UpdateAccountAccessToken :one
 UPDATE public.account
 SET updated_at = NOW(), access_token = $2
 WHERE id = $1
-RETURNING id, email, username, password, is_block, ua, created_at, updated_at, access_token, proxy_id
+RETURNING id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id
 `
 
 type UpdateAccountAccessTokenParams struct {
@@ -146,6 +275,7 @@ func (q *Queries) UpdateAccountAccessToken(ctx context.Context, arg UpdateAccoun
 		&i.Ua,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cookies,
 		&i.AccessToken,
 		&i.ProxyID,
 	)
