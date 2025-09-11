@@ -9,8 +9,6 @@ import (
 	"context"
 	"database/sql"
 	"time"
-
-	"github.com/sqlc-dev/pqtype"
 )
 
 const createAccount = `-- name: CreateAccount :one
@@ -56,6 +54,42 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Cookies,
 		&i.AccessToken,
 		&i.ProxyID,
+	)
+	return i, err
+}
+
+const createComment = `-- name: CreateComment :one
+INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id, is_analyzed, inserted_at)
+VALUES ($1, $2, $3, $4, $5, false, NOW())
+RETURNING id, content, is_analyzed, created_at, inserted_at, post_id, author_id, comment_id
+`
+
+type CreateCommentParams struct {
+	PostID    int32
+	CommentID string
+	Content   string
+	CreatedAt time.Time
+	AuthorID  int32
+}
+
+func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error) {
+	row := q.db.QueryRowContext(ctx, createComment,
+		arg.PostID,
+		arg.CommentID,
+		arg.Content,
+		arg.CreatedAt,
+		arg.AuthorID,
+	)
+	var i Comment
+	err := row.Scan(
+		&i.ID,
+		&i.Content,
+		&i.IsAnalyzed,
+		&i.CreatedAt,
+		&i.InsertedAt,
+		&i.PostID,
+		&i.AuthorID,
+		&i.CommentID,
 	)
 	return i, err
 }
@@ -114,6 +148,41 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		&i.InsertedAt,
 		&i.GroupID,
 		&i.IsAnalyzed,
+	)
+	return i, err
+}
+
+const createProfile = `-- name: CreateProfile :one
+INSERT INTO public.user_profile (facebook_id, name, created_at, updated_at)
+VALUES ($1, $2, NOW(), NOW())
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, profile_url, profile_picture_url, friends_count, is_verified, last_scraped, created_at, updated_at, scraped_by_id
+`
+
+type CreateProfileParams struct {
+	FacebookID string
+	Name       sql.NullString
+}
+
+func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (UserProfile, error) {
+	row := q.db.QueryRowContext(ctx, createProfile, arg.FacebookID, arg.Name)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.FacebookID,
+		&i.Name,
+		&i.Bio,
+		&i.Location,
+		&i.Work,
+		&i.Education,
+		&i.RelationshipStatus,
+		&i.ProfileUrl,
+		&i.ProfilePictureUrl,
+		&i.FriendsCount,
+		&i.IsVerified,
+		&i.LastScraped,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScrapedByID,
 	)
 	return i, err
 }
@@ -203,7 +272,7 @@ func (q *Queries) GetGroupById(ctx context.Context, id int32) (Group, error) {
 }
 
 const getGroupByIdWithAccount = `-- name: GetGroupByIdWithAccount :one
-SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, a.id, a.email, a.username, a.password, a.is_block, a.ua, a.created_at, a.updated_at, a.cookies, a.access_token, a.proxy_id FROM public."group" g
+SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, a.password, a.email, a.username, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.id = $1
 `
@@ -214,17 +283,10 @@ type GetGroupByIdWithAccountRow struct {
 	GroupName   string
 	IsJoined    bool
 	AccountID   sql.NullInt32
-	ID_2        int32
+	Password    string
 	Email       string
 	Username    string
-	Password    string
-	IsBlock     bool
-	Ua          string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	Cookies     pqtype.NullRawMessage
 	AccessToken sql.NullString
-	ProxyID     sql.NullInt32
 }
 
 func (q *Queries) GetGroupByIdWithAccount(ctx context.Context, id int32) (GetGroupByIdWithAccountRow, error) {
@@ -236,17 +298,69 @@ func (q *Queries) GetGroupByIdWithAccount(ctx context.Context, id int32) (GetGro
 		&i.GroupName,
 		&i.IsJoined,
 		&i.AccountID,
-		&i.ID_2,
+		&i.Password,
 		&i.Email,
 		&i.Username,
-		&i.Password,
-		&i.IsBlock,
-		&i.Ua,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Cookies,
 		&i.AccessToken,
-		&i.ProxyID,
+	)
+	return i, err
+}
+
+const getPostById = `-- name: GetPostById :one
+SELECT id, post_id, content, created_at, inserted_at, group_id, is_analyzed FROM public.post WHERE id = $1
+`
+
+func (q *Queries) GetPostById(ctx context.Context, id int32) (Post, error) {
+	row := q.db.QueryRowContext(ctx, getPostById, id)
+	var i Post
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.InsertedAt,
+		&i.GroupID,
+		&i.IsAnalyzed,
+	)
+	return i, err
+}
+
+const getPostByIdWithAccount = `-- name: GetPostByIdWithAccount :one
+SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.password, a.email, a.username, a.access_token FROM public.post p
+JOIN public."group" g ON p.group_id = g.id
+JOIN public.account a ON g.account_id = a.id
+WHERE p.id = $1
+`
+
+type GetPostByIdWithAccountRow struct {
+	ID          int32
+	PostID      string
+	Content     string
+	CreatedAt   time.Time
+	InsertedAt  time.Time
+	GroupID     int32
+	IsAnalyzed  bool
+	Password    string
+	Email       string
+	Username    string
+	AccessToken sql.NullString
+}
+
+func (q *Queries) GetPostByIdWithAccount(ctx context.Context, id int32) (GetPostByIdWithAccountRow, error) {
+	row := q.db.QueryRowContext(ctx, getPostByIdWithAccount, id)
+	var i GetPostByIdWithAccountRow
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.InsertedAt,
+		&i.GroupID,
+		&i.IsAnalyzed,
+		&i.Password,
+		&i.Email,
+		&i.Username,
+		&i.AccessToken,
 	)
 	return i, err
 }

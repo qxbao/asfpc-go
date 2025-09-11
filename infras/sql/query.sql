@@ -24,7 +24,7 @@ RETURNING *;
 SELECT * FROM public."group" WHERE id = $1;
 
 -- name: GetGroupByIdWithAccount :one
-SELECT g.*, a.* FROM public."group" g
+SELECT g.*, a.password, a.email, a.username, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.id = $1;
 
@@ -33,3 +33,21 @@ INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is
 VALUES ($1, $2, $3, NOW(), $4, false)
 RETURNING *;
 
+-- name: GetPostById :one
+SELECT * FROM public.post WHERE id = $1;
+
+-- name: GetPostByIdWithAccount :one
+SELECT p.*, a.password, a.email, a.username, a.access_token FROM public.post p
+JOIN public."group" g ON p.group_id = g.id
+JOIN public.account a ON g.account_id = a.id
+WHERE p.id = $1;
+
+-- name: CreateComment :one
+INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id, is_analyzed, inserted_at)
+VALUES ($1, $2, $3, $4, $5, false, NOW())
+RETURNING *;
+
+-- name: CreateProfile :one
+INSERT INTO public.user_profile (facebook_id, name, created_at, updated_at)
+VALUES ($1, $2, NOW(), NOW())
+RETURNING *;
