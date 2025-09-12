@@ -16,4 +16,8 @@ func InitScanRoutes(s infras.Server) {
 	e.POST("/scan/post/:id", func(c echo.Context) error {
 		return services.ScanPostComments(s, c)
 	})
+
+	e.POST("/scan/profile/:id", func(c echo.Context) error {
+		return services.ScanUserProfile(s, c)
+	})
 }

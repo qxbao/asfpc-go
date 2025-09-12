@@ -1,14 +1,16 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"os"
+
 	"github.com/labstack/echo/v4"
+	_ "github.com/lib/pq"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/routes"
-	_ "github.com/lib/pq"
 )
 
 type Server struct {
@@ -23,6 +25,9 @@ func (s *Server) Run() {
 }
 
 func (s *Server) start() {
+	configs := s.loadConfigs()
+	s.GlobalConfig = &configs
+
 	e := echo.New()
 	s.Echo = e
 	if err := s.initRoute(); err != nil {
@@ -73,4 +78,19 @@ func (s Server) initRoute() error {
 	routes.InitAccountRoutes(s.Server)
 	routes.InitScanRoutes(s.Server)
 	return nil
+}
+
+func (s Server) loadConfigs() map[string]string {
+	config := make(map[string]string)
+	ctx := context.Background()
+	defer ctx.Done()
+	loadedConfigs, err := s.Queries.GetAllConfigs(ctx)
+	if err != nil {
+		log.Println("Error loading configs:", err)
+		return config
+	}
+	for _, c := range loadedConfigs {
+		config[c.Key] = c.Value
+	}
+	return config
 }

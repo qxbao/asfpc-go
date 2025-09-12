@@ -83,7 +83,7 @@ func (fg FacebookGraph) GenerateFBAccessToken(username string, password string) 
 	return atResponse.AccessToken, nil
 }
 
-func query[T any](path string, kwargs *map[string]string) (T, error) {
+func graphQuery[T any](path string, kwargs *map[string]string) (T, error) {
 	c := resty.New()
 	defer c.Close()
 
@@ -122,7 +122,7 @@ func (fg FacebookGraph) GetGroupFeed(groupId *string, kwargs *map[string]string)
 
 	path := fmt.Sprintf("%s/%s/feed", LatestAPIVersion, *groupId)
 	(*kwargs)["access_token"] = fg.AccessToken
-	return query[infras.GetGroupPostsResponse](path, kwargs)
+	return graphQuery[infras.GetGroupPostsResponse](path, kwargs)
 }
 
 func (fg FacebookGraph) GetPostComments(postId *string, kwargs *map[string]string) (infras.GetPostCommentsResponse, error) {
@@ -132,5 +132,10 @@ func (fg FacebookGraph) GetPostComments(postId *string, kwargs *map[string]strin
 
 	path := fmt.Sprintf("%s/%s/comments", LatestAPIVersion, *postId)
 	(*kwargs)["access_token"] = fg.AccessToken
-	return query[infras.GetPostCommentsResponse](path, kwargs)
+	return graphQuery[infras.GetPostCommentsResponse](path, kwargs)
+}
+
+func (fg FacebookGraph) GetUserDetails(userId string, kwargs *map[string]string) (infras.UserProfile, error) {
+	(*kwargs)["access_token"] = fg.AccessToken
+	return graphQuery[infras.UserProfile](userId, kwargs)
 }

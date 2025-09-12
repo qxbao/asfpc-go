@@ -64,6 +64,7 @@ type Group struct {
 	GroupName string
 	IsJoined  bool
 	AccountID sql.NullInt32
+	ScannedAt sql.NullTime
 }
 
 type Image struct {
@@ -112,12 +113,15 @@ type UserProfile struct {
 	Work               sql.NullString
 	Education          sql.NullString
 	RelationshipStatus sql.NullString
-	ProfileUrl         string
-	ProfilePictureUrl  sql.NullString
-	FriendsCount       sql.NullInt32
-	IsVerified         bool
-	LastScraped        time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ScrapedByID        int32
+	IsScanned          bool
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+	ProfileUrl         string
 }

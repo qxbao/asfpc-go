@@ -97,7 +97,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 const createGroup = `-- name: CreateGroup :one
 INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
 VALUES ($1, $2, false, $3)
-RETURNING id, group_id, group_name, is_joined, account_id
+RETURNING id, group_id, group_name, is_joined, account_id, scanned_at
 `
 
 type CreateGroupParams struct {
@@ -115,6 +115,7 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		&i.GroupName,
 		&i.IsJoined,
 		&i.AccountID,
+		&i.ScannedAt,
 	)
 	return i, err
 }
@@ -153,18 +154,19 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 }
 
 const createProfile = `-- name: CreateProfile :one
-INSERT INTO public.user_profile (facebook_id, name, created_at, updated_at)
-VALUES ($1, $2, NOW(), NOW())
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, profile_url, profile_picture_url, friends_count, is_verified, last_scraped, created_at, updated_at, scraped_by_id
+INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, updated_at)
+VALUES ($1, $2, $3, NOW(), NOW())
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
 `
 
 type CreateProfileParams struct {
-	FacebookID string
-	Name       sql.NullString
+	FacebookID  string
+	Name        sql.NullString
+	ScrapedByID int32
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (UserProfile, error) {
-	row := q.db.QueryRowContext(ctx, createProfile, arg.FacebookID, arg.Name)
+	row := q.db.QueryRowContext(ctx, createProfile, arg.FacebookID, arg.Name, arg.ScrapedByID)
 	var i UserProfile
 	err := row.Scan(
 		&i.ID,
@@ -175,14 +177,17 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (U
 		&i.Work,
 		&i.Education,
 		&i.RelationshipStatus,
-		&i.ProfileUrl,
-		&i.ProfilePictureUrl,
-		&i.FriendsCount,
-		&i.IsVerified,
-		&i.LastScraped,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScrapedByID,
+		&i.IsScanned,
+		&i.Hometown,
+		&i.Locale,
+		&i.Gender,
+		&i.Birthday,
+		&i.Email,
+		&i.Phone,
+		&i.ProfileUrl,
 	)
 	return i, err
 }
@@ -254,8 +259,35 @@ func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]Acc
 	return items, nil
 }
 
+const getAllConfigs = `-- name: GetAllConfigs :many
+SELECT id, key, value FROM public.config
+`
+
+func (q *Queries) GetAllConfigs(ctx context.Context) ([]Config, error) {
+	rows, err := q.db.QueryContext(ctx, getAllConfigs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Config
+	for rows.Next() {
+		var i Config
+		if err := rows.Scan(&i.ID, &i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getGroupById = `-- name: GetGroupById :one
-SELECT id, group_id, group_name, is_joined, account_id FROM public."group" WHERE id = $1
+SELECT id, group_id, group_name, is_joined, account_id, scanned_at FROM public."group" WHERE id = $1
 `
 
 func (q *Queries) GetGroupById(ctx context.Context, id int32) (Group, error) {
@@ -267,12 +299,13 @@ func (q *Queries) GetGroupById(ctx context.Context, id int32) (Group, error) {
 		&i.GroupName,
 		&i.IsJoined,
 		&i.AccountID,
+		&i.ScannedAt,
 	)
 	return i, err
 }
 
 const getGroupByIdWithAccount = `-- name: GetGroupByIdWithAccount :one
-SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, a.password, a.email, a.username, a.access_token FROM public."group" g
+SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.password, a.email, a.username, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.id = $1
 `
@@ -283,6 +316,7 @@ type GetGroupByIdWithAccountRow struct {
 	GroupName   string
 	IsJoined    bool
 	AccountID   sql.NullInt32
+	ScannedAt   sql.NullTime
 	Password    string
 	Email       string
 	Username    string
@@ -298,6 +332,7 @@ func (q *Queries) GetGroupByIdWithAccount(ctx context.Context, id int32) (GetGro
 		&i.GroupName,
 		&i.IsJoined,
 		&i.AccountID,
+		&i.ScannedAt,
 		&i.Password,
 		&i.Email,
 		&i.Username,
@@ -326,7 +361,7 @@ func (q *Queries) GetPostById(ctx context.Context, id int32) (Post, error) {
 }
 
 const getPostByIdWithAccount = `-- name: GetPostByIdWithAccount :one
-SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.password, a.email, a.username, a.access_token FROM public.post p
+SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.password, a.email, a.username, a.access_token, a.id AS account_id FROM public.post p
 JOIN public."group" g ON p.group_id = g.id
 JOIN public.account a ON g.account_id = a.id
 WHERE p.id = $1
@@ -344,6 +379,7 @@ type GetPostByIdWithAccountRow struct {
 	Email       string
 	Username    string
 	AccessToken sql.NullString
+	AccountID   int32
 }
 
 func (q *Queries) GetPostByIdWithAccount(ctx context.Context, id int32) (GetPostByIdWithAccountRow, error) {
@@ -359,6 +395,101 @@ func (q *Queries) GetPostByIdWithAccount(ctx context.Context, id int32) (GetPost
 		&i.IsAnalyzed,
 		&i.Password,
 		&i.Email,
+		&i.Username,
+		&i.AccessToken,
+		&i.AccountID,
+	)
+	return i, err
+}
+
+const getProfileById = `-- name: GetProfileById :one
+SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url FROM public.user_profile WHERE id = $1
+`
+
+func (q *Queries) GetProfileById(ctx context.Context, id int32) (UserProfile, error) {
+	row := q.db.QueryRowContext(ctx, getProfileById, id)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.FacebookID,
+		&i.Name,
+		&i.Bio,
+		&i.Location,
+		&i.Work,
+		&i.Education,
+		&i.RelationshipStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScrapedByID,
+		&i.IsScanned,
+		&i.Hometown,
+		&i.Locale,
+		&i.Gender,
+		&i.Birthday,
+		&i.Email,
+		&i.Phone,
+		&i.ProfileUrl,
+	)
+	return i, err
+}
+
+const getProfileByIdWithAccount = `-- name: GetProfileByIdWithAccount :one
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.password, a.email, a.username, a.access_token FROM public.user_profile up
+JOIN public.account a ON up.scraped_by_id = a.id
+WHERE up.id = $1
+`
+
+type GetProfileByIdWithAccountRow struct {
+	ID                 int32
+	FacebookID         string
+	Name               sql.NullString
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ScrapedByID        int32
+	IsScanned          bool
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+	ProfileUrl         string
+	Password           string
+	Email_2            string
+	Username           string
+	AccessToken        sql.NullString
+}
+
+func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetProfileByIdWithAccountRow, error) {
+	row := q.db.QueryRowContext(ctx, getProfileByIdWithAccount, id)
+	var i GetProfileByIdWithAccountRow
+	err := row.Scan(
+		&i.ID,
+		&i.FacebookID,
+		&i.Name,
+		&i.Bio,
+		&i.Location,
+		&i.Work,
+		&i.Education,
+		&i.RelationshipStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScrapedByID,
+		&i.IsScanned,
+		&i.Hometown,
+		&i.Locale,
+		&i.Gender,
+		&i.Birthday,
+		&i.Email,
+		&i.Phone,
+		&i.ProfileUrl,
+		&i.Password,
+		&i.Email_2,
 		&i.Username,
 		&i.AccessToken,
 	)
@@ -392,6 +523,94 @@ func (q *Queries) UpdateAccountAccessToken(ctx context.Context, arg UpdateAccoun
 		&i.Cookies,
 		&i.AccessToken,
 		&i.ProxyID,
+	)
+	return i, err
+}
+
+const updateGroupScannedAt = `-- name: UpdateGroupScannedAt :exec
+UPDATE public."group"
+SET scanned_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) UpdateGroupScannedAt(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, updateGroupScannedAt, id)
+	return err
+}
+
+const updateProfileAfterScan = `-- name: UpdateProfileAfterScan :one
+UPDATE public.user_profile
+SET updated_at = NOW(),
+    is_scanned = TRUE,
+    bio = $2,
+    location = $3,
+    work = $4,
+    education = $5,
+    relationship_status = $6,
+    profile_url = $7,
+    hometown = $8,
+    locale = $9,
+    gender = $10,
+    birthday = $11,
+    email = $12,
+    phone = $13
+WHERE id = $1
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
+`
+
+type UpdateProfileAfterScanParams struct {
+	ID                 int32
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	ProfileUrl         string
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+}
+
+func (q *Queries) UpdateProfileAfterScan(ctx context.Context, arg UpdateProfileAfterScanParams) (UserProfile, error) {
+	row := q.db.QueryRowContext(ctx, updateProfileAfterScan,
+		arg.ID,
+		arg.Bio,
+		arg.Location,
+		arg.Work,
+		arg.Education,
+		arg.RelationshipStatus,
+		arg.ProfileUrl,
+		arg.Hometown,
+		arg.Locale,
+		arg.Gender,
+		arg.Birthday,
+		arg.Email,
+		arg.Phone,
+	)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.FacebookID,
+		&i.Name,
+		&i.Bio,
+		&i.Location,
+		&i.Work,
+		&i.Education,
+		&i.RelationshipStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScrapedByID,
+		&i.IsScanned,
+		&i.Hometown,
+		&i.Locale,
+		&i.Gender,
+		&i.Birthday,
+		&i.Email,
+		&i.Phone,
+		&i.ProfileUrl,
 	)
 	return i, err
 }
