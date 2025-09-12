@@ -1,5 +1,8 @@
 # ASFPC-Go
 
+![Build Status](https://github.com/qxbao/asfpc-go/actions/workflows/go.yml/badge.svg)
+
+
 **A**utomated **S**ystem for **F**inding **P**otential **C**ustomers
 
 This project aims to create an automated system that can efficiently identify and target potential customers for a business. By leveraging data analysis and machine learning techniques, the system will analyze customer behavior, preferences, and demographics to generate leads and improve marketing strategies.
