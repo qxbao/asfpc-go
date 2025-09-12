@@ -1,4 +1,4 @@
-# ASFPC-Go
+# ASFPC - Go
 
 ![Build Status](https://github.com/qxbao/asfpc-go/actions/workflows/go.yml/badge.svg)
 
