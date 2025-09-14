@@ -1,5 +1,9 @@
-get-content .env | foreach {
+# This script require air to be installed
+# If you have not installed air, please visit https://github.com/air-verse/air
+# Or use `go install github.com/air-verse/air@latest` to install it <3
+
+Get-Content .env | foreach {
     $name, $value = $_.split('=')
-    set-content env:\$name $value
+    Set-Content env:\$name $value
 }
-go run main.go
+air

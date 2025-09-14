@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	_ "github.com/lib/pq"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
@@ -29,6 +30,7 @@ func (s *Server) start() {
 	s.GlobalConfig = &configs
 
 	e := echo.New()
+	e.Use(middleware.CORS())
 	s.Echo = e
 	if err := s.initRoute(); err != nil {
 		log.Fatal("Failed to initialize routes:", err)

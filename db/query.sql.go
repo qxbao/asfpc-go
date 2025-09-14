@@ -215,8 +215,31 @@ func (q *Queries) GetAccountById(ctx context.Context, id int32) (Account, error)
 	return i, err
 }
 
+const getAccountStats = `-- name: GetAccountStats :one
+SELECT
+  (SELECT COUNT(*) FROM public.account) AS total_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = true) AS blocked_accounts
+`
+
+type GetAccountStatsRow struct {
+	TotalAccounts   int64
+	ActiveAccounts  int64
+	BlockedAccounts int64
+}
+
+func (q *Queries) GetAccountStats(ctx context.Context) (GetAccountStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getAccountStats)
+	var i GetAccountStatsRow
+	err := row.Scan(&i.TotalAccounts, &i.ActiveAccounts, &i.BlockedAccounts)
+	return i, err
+}
+
 const getAccounts = `-- name: GetAccounts :many
-SELECT id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id FROM public.account ORDER BY id LIMIT $1 OFFSET $2
+SELECT id, username, email, updated_at, access_token, (cookies is not null) as is_login, is_block, (
+  SELECT COUNT(*) FROM public."group" WHERE account_id = id
+) AS group_count
+FROM public.account ORDER BY id LIMIT $1 OFFSET $2
 `
 
 type GetAccountsParams struct {
@@ -224,27 +247,35 @@ type GetAccountsParams struct {
 	Offset int32
 }
 
-func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]Account, error) {
+type GetAccountsRow struct {
+	ID          int32
+	Username    string
+	Email       string
+	UpdatedAt   time.Time
+	AccessToken sql.NullString
+	IsLogin     interface{}
+	IsBlock     bool
+	GroupCount  int64
+}
+
+func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]GetAccountsRow, error) {
 	rows, err := q.db.QueryContext(ctx, getAccounts, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Account
+	var items []GetAccountsRow
 	for rows.Next() {
-		var i Account
+		var i GetAccountsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Email,
 			&i.Username,
-			&i.Password,
-			&i.IsBlock,
-			&i.Ua,
-			&i.CreatedAt,
+			&i.Email,
 			&i.UpdatedAt,
-			&i.Cookies,
 			&i.AccessToken,
-			&i.ProxyID,
+			&i.IsLogin,
+			&i.IsBlock,
+			&i.GroupCount,
 		); err != nil {
 			return nil, err
 		}

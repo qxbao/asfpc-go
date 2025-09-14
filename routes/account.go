@@ -13,6 +13,10 @@ func InitAccountRoutes(s infras.Server) {
 		return services.GetAccounts(s, c)
 	})
 
+	e.GET("/account/stats", func(c echo.Context) error {
+		return services.GetAccountStats(s, c)
+	})
+
 	e.POST("/account/add", func(c echo.Context) error {
 		return services.AddAccount(s, c)
 	})

@@ -1,11 +1,16 @@
 module github.com/qxbao/asfpc
 
-go 1.24.5
+go 1.25
 
 require (
 	github.com/go-faker/faker/v4 v4.6.1
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/lib/pq v1.10.9
+)
+
+require (
+	github.com/stretchr/testify v1.11.1 // indirect
+	golang.org/x/time v0.11.0 // indirect
 )
 
 require github.com/sqlc-dev/pqtype v0.3.0 // direct

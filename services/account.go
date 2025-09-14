@@ -11,6 +11,21 @@ import (
 	"github.com/qxbao/asfpc/infras"
 )
 
+func GetAccountStats(s infras.Server, c echo.Context) error {
+	queries := s.Queries
+	stats, err := queries.GetAccountStats(c.Request().Context())
+
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "Failed to retrieve account stats: " + err.Error(),
+		})
+	}
+	
+	return c.JSON(http.StatusOK, map[string]any{
+		"data": stats,
+	})
+}
+
 func AddAccount(s infras.Server, c echo.Context) error {
 	queries := s.Queries
 	dto := new(infras.CreateAccountDTO)

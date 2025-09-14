@@ -72,11 +72,11 @@ get-content .env | foreach {
 ```
 
 ## Development
-To run the application in development mode, use the provided `dev` script.
-1. Run the application in development mode
+To run the application in development mode (with hot-reload), use the provided `dev` script.
 ```powershell
 ./dev.ps1
 ```
+Note: This script is for Powershell and require `air` package to be installed.
 
 ## Docker
 To build and run the application using Docker, follow these steps:

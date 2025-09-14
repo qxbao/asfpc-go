@@ -6,8 +6,17 @@ RETURNING *;
 -- name: GetAccountById :one
 SELECT * FROM public.account WHERE id = $1;
 
+-- name: GetAccountStats :one
+SELECT
+  (SELECT COUNT(*) FROM public.account) AS total_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = true) AS blocked_accounts;
+
 -- name: GetAccounts :many
-SELECT * FROM public.account ORDER BY id LIMIT $1 OFFSET $2;
+SELECT id, username, email, updated_at, access_token, (cookies is not null) as is_login, is_block, (
+  SELECT COUNT(*) FROM public."group" WHERE account_id = id
+) AS group_count
+FROM public.account ORDER BY id LIMIT $1 OFFSET $2;
 
 -- name: UpdateAccountAccessToken :one
 UPDATE public.account
