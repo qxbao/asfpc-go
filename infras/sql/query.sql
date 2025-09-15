@@ -44,6 +44,9 @@ RETURNING *;
 -- name: GetGroupById :one
 SELECT * FROM public."group" WHERE id = $1;
 
+-- name: GetGroupsByAccountId :many
+SELECT * FROM public."group" WHERE account_id = $1;
+
 -- name: GetGroupByIdWithAccount :one
 SELECT g.*, a.password, a.email, a.username, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id

@@ -379,6 +379,40 @@ func (q *Queries) GetGroupByIdWithAccount(ctx context.Context, id int32) (GetGro
 	return i, err
 }
 
+const getGroupsByAccountId = `-- name: GetGroupsByAccountId :many
+SELECT id, group_id, group_name, is_joined, account_id, scanned_at FROM public."group" WHERE account_id = $1
+`
+
+func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullInt32) ([]Group, error) {
+	rows, err := q.db.QueryContext(ctx, getGroupsByAccountId, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Group
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.GroupName,
+			&i.IsJoined,
+			&i.AccountID,
+			&i.ScannedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPostById = `-- name: GetPostById :one
 SELECT id, post_id, content, created_at, inserted_at, group_id, is_analyzed FROM public.post WHERE id = $1
 `

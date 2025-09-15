@@ -5,7 +5,6 @@ type GetGroupPostsResponse struct {
 	Paging *Paging `json:"paging,omitempty"`
 }
 
-
 type Post struct {
 	ID          *string `json:"id"`
 	UpdatedTime *string `json:"updated_time"`

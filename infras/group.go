@@ -5,3 +5,7 @@ type CreateGroupDTO struct {
 	GroupId   *string `json:"group_id"`
 	AccountId *int32  `json:"account_id"`
 }
+
+type GetGroupsByAccountIDDTO struct {
+	AccountID int32 `query:"account_id"`
+}

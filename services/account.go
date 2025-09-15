@@ -11,8 +11,12 @@ import (
 	"github.com/qxbao/asfpc/infras"
 )
 
-func GetAccountStats(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+type AccountService struct{
+	Server infras.Server
+}
+
+func (s *AccountService) GetAccountStats(c echo.Context) error {
+	queries := s.Server.Queries
 	stats, err := queries.GetAccountStats(c.Request().Context())
 
 	if err != nil {
@@ -26,8 +30,8 @@ func GetAccountStats(s infras.Server, c echo.Context) error {
 	})
 }
 
-func AddAccount(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+func (s *AccountService) AddAccount(c echo.Context) error {
+	queries := s.Server.Queries
 	dto := new(infras.CreateAccountDTO)
 
 	if err := c.Bind(dto); err != nil {
@@ -66,8 +70,8 @@ func AddAccount(s infras.Server, c echo.Context) error {
 	})
 }
 
-func GetAccount(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+func (s *AccountService) GetAccount(c echo.Context) error {
+	queries := s.Server.Queries
 	dto := new(infras.GetAccountDTO)
 
 	if err := c.Bind(dto); err != nil {
@@ -86,8 +90,8 @@ func GetAccount(s infras.Server, c echo.Context) error {
 	})
 }
 
-func GetAccounts(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+func (s *AccountService) GetAccounts(c echo.Context) error {
+	queries := s.Server.Queries
 	dto := new(infras.GetAccountsDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid request body")
@@ -119,8 +123,8 @@ func GetAccounts(s infras.Server, c echo.Context) error {
 	})
 }
 
-func DeleteAccounts(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+func (s *AccountService) DeleteAccounts(c echo.Context) error {
+	queries := s.Server.Queries
 	dto := new(infras.DeleteAccountsDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid request body")
@@ -141,8 +145,8 @@ func DeleteAccounts(s infras.Server, c echo.Context) error {
 	})
 }
 
-func UpdateAccountCredentials(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+func (s *AccountService) UpdateAccountCredentials(c echo.Context) error {
+	queries := s.Server.Queries
 	dto := new(infras.UpdateAccountCredentialsDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string] string{
@@ -166,12 +170,12 @@ func UpdateAccountCredentials(s infras.Server, c echo.Context) error {
 	})
 }
 
-func GenAccountsAT(s infras.Server, c echo.Context) error {
+func (s *AccountService) GenAccountsAT(c echo.Context) error {
 	dto := new(infras.GenAccountsATDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid request body")
 	}
-	queries := s.Queries
+	queries := s.Server.Queries
 	if len(dto.IDs) == 0 {
 		return c.String(http.StatusBadRequest, "No account IDs provided")
 	}
@@ -238,8 +242,8 @@ func GenAccountsAT(s infras.Server, c echo.Context) error {
 	})
 }
 
-func CreateGroup(s infras.Server, c echo.Context) error {
-	queries := s.Queries
+func (s *AccountService) CreateGroup(c echo.Context) error {
+	queries := s.Server.Queries
 	dto := new(infras.CreateGroupDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid request body")
@@ -265,5 +269,32 @@ func CreateGroup(s infras.Server, c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"data": group,
+	})
+}
+
+func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
+	queries := s.Server.Queries
+	dto := new(infras.GetGroupsByAccountIDDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+
+	if dto.AccountID == 0 {
+		return c.String(http.StatusBadRequest, "AccountID is required")
+	}
+
+	groups, err := queries.GetGroupsByAccountId(c.Request().Context(), sql.NullInt32{
+		Int32: dto.AccountID,
+		Valid: dto.AccountID > 0,
+	})
+
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "Failed to retrieve groups: " + err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"data": groups,
 	})
 }
