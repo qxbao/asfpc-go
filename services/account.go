@@ -3,7 +3,7 @@ package services
 import (
 	"database/sql"
 	"net/http"
-	"strconv"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -20,7 +20,7 @@ func GetAccountStats(s infras.Server, c echo.Context) error {
 			"error": "Failed to retrieve account stats: " + err.Error(),
 		})
 	}
-	
+
 	return c.JSON(http.StatusOK, map[string]any{
 		"data": stats,
 	})
@@ -66,6 +66,26 @@ func AddAccount(s infras.Server, c echo.Context) error {
 	})
 }
 
+func GetAccount(s infras.Server, c echo.Context) error {
+	queries := s.Queries
+	dto := new(infras.GetAccountDTO)
+
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+
+	account, err := queries.GetAccountById(c.Request().Context(), dto.ID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "Failed to retrieve account: " + err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"data": account,
+	})
+}
+
 func GetAccounts(s infras.Server, c echo.Context) error {
 	queries := s.Queries
 	dto := new(infras.GetAccountsDTO)
@@ -99,44 +119,122 @@ func GetAccounts(s infras.Server, c echo.Context) error {
 	})
 }
 
-func GenAccountAT(s infras.Server, c echo.Context) error {
-	account_id := c.Param("id")
-	val, err := strconv.ParseInt(account_id, 10, 32)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]any{
-			"error": "Failed to retrieve accounts: " + err.Error(),
-		})
-	}
+func DeleteAccounts(s infras.Server, c echo.Context) error {
 	queries := s.Queries
-	account, err := queries.GetAccountById(c.Request().Context(), int32(val))
-
+	dto := new(infras.DeleteAccountsDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+	if len(dto.IDs) == 0 {
+		return c.String(http.StatusBadRequest, "No account IDs provided")
+	}
+	err := queries.DeleteAccounts(c.Request().Context(), dto.IDs)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]any{
-			"error": "Failed to retrieve account: " + err.Error(),
+			"error": "Failed to delete accounts: " + err.Error(),
 		})
 	}
-
-	fg := FacebookGraph{}
-	username := account.Email
-	if username == "" {
-		username = account.Username
-	}
-
-	at, err := fg.GenerateFBAccessToken(username, account.Password)
-
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{
-			"error": "Failed to generate access token: " + err.Error(),
-		})
-	}
-
-	queries.UpdateAccountAccessToken(c.Request().Context(), db.UpdateAccountAccessTokenParams{
-		ID:          account.ID,
-		AccessToken: sql.NullString{String: *at, Valid: true},
-	})
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"access_token": at,
+		"message":     "Accounts deleted successfully",
+		"deleted_ids": dto.IDs,
+	})
+}
+
+func UpdateAccountCredentials(s infras.Server, c echo.Context) error {
+	queries := s.Queries
+	dto := new(infras.UpdateAccountCredentialsDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string] string{
+			"error": "Invalid request body: " + err.Error(),
+		})
+	}
+	account, err := queries.UpdateAccountCredentials(c.Request().Context(), db.UpdateAccountCredentialsParams{
+		ID:       dto.ID,
+		Email:    *dto.Email,
+		Username: *dto.Username,
+		Password: *dto.Password,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string] string{
+			"error": "Failed to update account credentials: " + err.Error(),
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any {
+		"message": "Account credentials updated successfully",
+		"data": account,
+	})
+}
+
+func GenAccountsAT(s infras.Server, c echo.Context) error {
+	dto := new(infras.GenAccountsATDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+	queries := s.Queries
+	if len(dto.IDs) == 0 {
+		return c.String(http.StatusBadRequest, "No account IDs provided")
+	}
+
+	var wg sync.WaitGroup
+	successCount := make(chan int32, len(dto.IDs))
+	errorIds := make(chan int32, len(dto.IDs))
+	errChan := make(chan error, len(dto.IDs))
+	for _, id := range dto.IDs {
+		wg.Add(1)
+		go func(accountId int32) {
+			defer wg.Done()
+			account, err := queries.GetAccountById(c.Request().Context(), accountId)
+			if err != nil {
+				errChan <- err
+				errorIds <- accountId
+				return
+			}
+			fg := FacebookGraph{}
+			username := account.Email
+			if username == "" {
+				username = account.Username
+			}
+			at, err := fg.GenerateFBAccessToken(username, account.Password)
+			if err != nil {
+				errChan <- err
+				errorIds <- accountId
+				return
+			}
+			queries.UpdateAccountAccessToken(c.Request().Context(), db.UpdateAccountAccessTokenParams{
+				ID:          account.ID,
+				AccessToken: sql.NullString{String: *at, Valid: true},
+			})
+			successCount <- 1
+		}(id)
+	}
+
+	wg.Wait()
+	close(errChan)
+	close(errorIds)
+	close(successCount)
+
+	processed := 0
+	for range successCount {
+		processed++
+	}
+
+	var errors []string
+	for err := range errChan {
+		errors = append(errors, err.Error())
+	}
+
+	var eIds []int32
+	for id := range errorIds {
+		eIds = append(eIds, id)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"success_count":  processed,
+			"error_accounts": eIds,
+			"errors":         errors,
+		},
 	})
 }
 

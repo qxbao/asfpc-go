@@ -11,3 +11,22 @@ type GetAccountsDTO struct {
 	Page  *int32 `query:"page"`
 	Limit *int32 `query:"limit"`
 }
+
+type GetAccountDTO struct {
+	ID int32 `query:"id"`
+}
+
+type DeleteAccountsDTO struct {
+	IDs []int32 `json:"ids"`
+}
+
+type GenAccountsATDTO struct {
+	IDs []int32 `json:"ids"`
+}
+
+type UpdateAccountCredentialsDTO struct {
+	ID       int32   `json:"id"`
+	Email    *string `json:"email"`
+	Username *string `json:"username"`
+	Password *string `json:"password"`
+}

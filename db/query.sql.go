@@ -9,6 +9,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const createAccount = `-- name: CreateAccount :one
@@ -192,6 +194,15 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (U
 	return i, err
 }
 
+const deleteAccounts = `-- name: DeleteAccounts :exec
+DELETE FROM public.account WHERE id = ANY($1::int[])
+`
+
+func (q *Queries) DeleteAccounts(ctx context.Context, dollar_1 []int32) error {
+	_, err := q.db.ExecContext(ctx, deleteAccounts, pq.Array(dollar_1))
+	return err
+}
+
 const getAccountById = `-- name: GetAccountById :one
 SELECT id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id FROM public.account WHERE id = $1
 `
@@ -236,10 +247,10 @@ func (q *Queries) GetAccountStats(ctx context.Context) (GetAccountStatsRow, erro
 }
 
 const getAccounts = `-- name: GetAccounts :many
-SELECT id, username, email, updated_at, access_token, (cookies is not null) as is_login, is_block, (
-  SELECT COUNT(*) FROM public."group" WHERE account_id = id
-) AS group_count
-FROM public.account ORDER BY id LIMIT $1 OFFSET $2
+SELECT a.id, a.username, a.email, a.updated_at, a.access_token, (
+	SELECT COUNT(*) FROM public."group" g WHERE g.account_id = a.id
+) as group_count
+FROM public.account a LIMIT $1 OFFSET $2
 `
 
 type GetAccountsParams struct {
@@ -253,8 +264,6 @@ type GetAccountsRow struct {
 	Email       string
 	UpdatedAt   time.Time
 	AccessToken sql.NullString
-	IsLogin     interface{}
-	IsBlock     bool
 	GroupCount  int64
 }
 
@@ -273,8 +282,6 @@ func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]Get
 			&i.Email,
 			&i.UpdatedAt,
 			&i.AccessToken,
-			&i.IsLogin,
-			&i.IsBlock,
 			&i.GroupCount,
 		); err != nil {
 			return nil, err
@@ -541,6 +548,47 @@ type UpdateAccountAccessTokenParams struct {
 
 func (q *Queries) UpdateAccountAccessToken(ctx context.Context, arg UpdateAccountAccessTokenParams) (Account, error) {
 	row := q.db.QueryRowContext(ctx, updateAccountAccessToken, arg.ID, arg.AccessToken)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Username,
+		&i.Password,
+		&i.IsBlock,
+		&i.Ua,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Cookies,
+		&i.AccessToken,
+		&i.ProxyID,
+	)
+	return i, err
+}
+
+const updateAccountCredentials = `-- name: UpdateAccountCredentials :one
+UPDATE public.account
+SET updated_at = NOW(),
+    email = $2,
+    username = $3,
+    password = $4
+WHERE id = $1
+RETURNING id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id
+`
+
+type UpdateAccountCredentialsParams struct {
+	ID       int32
+	Email    string
+	Username string
+	Password string
+}
+
+func (q *Queries) UpdateAccountCredentials(ctx context.Context, arg UpdateAccountCredentialsParams) (Account, error) {
+	row := q.db.QueryRowContext(ctx, updateAccountCredentials,
+		arg.ID,
+		arg.Email,
+		arg.Username,
+		arg.Password,
+	)
 	var i Account
 	err := row.Scan(
 		&i.ID,

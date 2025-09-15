@@ -13,16 +13,28 @@ SELECT
   (SELECT COUNT(*) FROM public.account WHERE is_block = true) AS blocked_accounts;
 
 -- name: GetAccounts :many
-SELECT id, username, email, updated_at, access_token, (cookies is not null) as is_login, is_block, (
-  SELECT COUNT(*) FROM public."group" WHERE account_id = id
-) AS group_count
-FROM public.account ORDER BY id LIMIT $1 OFFSET $2;
+SELECT a.id, a.username, a.email, a.updated_at, a.access_token, (
+	SELECT COUNT(*) FROM public."group" g WHERE g.account_id = a.id
+) as group_count
+FROM public.account a LIMIT $1 OFFSET $2;
 
 -- name: UpdateAccountAccessToken :one
 UPDATE public.account
 SET updated_at = NOW(), access_token = $2
 WHERE id = $1
 RETURNING *;
+
+-- name: UpdateAccountCredentials :one
+UPDATE public.account
+SET updated_at = NOW(),
+    email = $2,
+    username = $3,
+    password = $4
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteAccounts :exec
+DELETE FROM public.account WHERE id = ANY($1::int[]);
 
 -- name: CreateGroup :one
 INSERT INTO public."group" (group_id, group_name, is_joined, account_id)

@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS public.account
     access_token character varying COLLATE pg_catalog."default",
     proxy_id integer,
     CONSTRAINT account_pkey PRIMARY KEY (id),
-    CONSTRAINT account_email_key UNIQUE (email),
     CONSTRAINT account_username_key UNIQUE (username),
     CONSTRAINT account_proxy_id_fkey FOREIGN KEY (proxy_id)
         REFERENCES public.proxy (id) MATCH SIMPLE
