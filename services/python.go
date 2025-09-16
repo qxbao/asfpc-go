@@ -1,9 +1,9 @@
 package services
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
-	"fmt"
 )
 
 const PythonPath = "services/python"
@@ -12,11 +12,10 @@ type PythonService struct {
 	EnvName string
 }
 
-
 func (ps PythonService) RunScript(args ...string) (string, error) {
 	pythonExe := filepath.Join("venv", "Scripts", "python.exe")
 	cmdArgs := append([]string{"main.py"}, args...)
-	
+
 	cmd := exec.Command(pythonExe, cmdArgs...)
 	cmd.Dir = PythonPath
 
