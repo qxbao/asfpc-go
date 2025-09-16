@@ -11,6 +11,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/cron"
 	"github.com/qxbao/asfpc/routes"
 )
 
@@ -28,6 +29,13 @@ func (s *Server) Run() {
 func (s *Server) start() {
 	configs := s.loadConfigs()
 	s.GlobalConfig = &configs
+
+	s.Scheduler = &cron.CronScheduler{
+		// queries: s.Queries,
+	}
+	s.Scheduler.Setup()
+	s.Scheduler.Start()
+	defer s.Scheduler.S.Shutdown()
 
 	e := echo.New()
 	e.Use(middleware.CORS())

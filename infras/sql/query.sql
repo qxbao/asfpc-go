@@ -52,6 +52,12 @@ SELECT g.*, a.password, a.email, a.username, a.access_token FROM public."group" 
 JOIN public.account a ON g.account_id = a.id
 WHERE g.id = $1;
 
+-- name: GetGroupsToScan :many
+SELECT g.*, a.access_token FROM public."group" g
+JOIN public.account a ON g.account_id = a.id
+WHERE g.is_joined = true
+ORDER BY scanned_at ASC LIMIT $1;
+
 -- name: UpdateGroupScannedAt :exec
 UPDATE public."group"
 SET scanned_at = NOW()
@@ -61,6 +67,13 @@ WHERE id = $1;
 INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
 VALUES ($1, $2, $3, NOW(), $4, false)
 RETURNING *;
+
+-- name: GetPostsToScan :many
+SELECT p.*, a.access_token FROM public.post p
+JOIN "group" g ON p.group_id = g.id
+JOIN account a ON g.account_id = a.id
+WHERE is_analyzed=false
+ORDER BY inserted_at ASC LIMIT $1;
 
 -- name: GetPostById :one
 SELECT * FROM public.post WHERE id = $1;

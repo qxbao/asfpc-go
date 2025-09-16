@@ -415,6 +415,54 @@ func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullIn
 	return items, nil
 }
 
+const getGroupsToScan = `-- name: GetGroupsToScan :many
+SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.access_token FROM public."group" g
+JOIN public.account a ON g.account_id = a.id
+WHERE g.is_joined = true
+ORDER BY scanned_at ASC LIMIT $1
+`
+
+type GetGroupsToScanRow struct {
+	ID          int32
+	GroupID     string
+	GroupName   string
+	IsJoined    bool
+	AccountID   sql.NullInt32
+	ScannedAt   sql.NullTime
+	AccessToken sql.NullString
+}
+
+func (q *Queries) GetGroupsToScan(ctx context.Context, limit int32) ([]GetGroupsToScanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getGroupsToScan, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetGroupsToScanRow
+	for rows.Next() {
+		var i GetGroupsToScanRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.GroupName,
+			&i.IsJoined,
+			&i.AccountID,
+			&i.ScannedAt,
+			&i.AccessToken,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPostById = `-- name: GetPostById :one
 SELECT id, post_id, content, created_at, inserted_at, group_id, is_analyzed FROM public.post WHERE id = $1
 `
@@ -474,6 +522,57 @@ func (q *Queries) GetPostByIdWithAccount(ctx context.Context, id int32) (GetPost
 		&i.AccountID,
 	)
 	return i, err
+}
+
+const getPostsToScan = `-- name: GetPostsToScan :many
+SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.access_token FROM public.post p
+JOIN "group" g ON p.group_id = g.id
+JOIN account a ON g.account_id = a.id
+WHERE is_analyzed=false
+ORDER BY inserted_at ASC LIMIT $1
+`
+
+type GetPostsToScanRow struct {
+	ID          int32
+	PostID      string
+	Content     string
+	CreatedAt   time.Time
+	InsertedAt  time.Time
+	GroupID     int32
+	IsAnalyzed  bool
+	AccessToken sql.NullString
+}
+
+func (q *Queries) GetPostsToScan(ctx context.Context, limit int32) ([]GetPostsToScanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPostsToScan, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPostsToScanRow
+	for rows.Next() {
+		var i GetPostsToScanRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PostID,
+			&i.Content,
+			&i.CreatedAt,
+			&i.InsertedAt,
+			&i.GroupID,
+			&i.IsAnalyzed,
+			&i.AccessToken,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getProfileById = `-- name: GetProfileById :one
