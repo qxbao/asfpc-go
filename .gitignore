@@ -3,3 +3,9 @@
 *.env
 .env
 *.exe
+venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+resources/
