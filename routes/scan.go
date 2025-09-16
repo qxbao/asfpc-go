@@ -7,8 +7,8 @@ import (
 
 func InitScanRoutes(s infras.Server) {
 	e := s.Echo
-	
-scanService := services.ScanService{
+
+	scanService := services.ScanService{
 		Server: s,
 	}
 	e.POST("/scan/group/:id", scanService.ScanGroupFeed)
