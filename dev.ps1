@@ -6,4 +6,4 @@ Get-Content .env | foreach {
     $name, $value = $_.split('=')
     Set-Content env:\$name $value
 }
-air
+air -c .air.toml

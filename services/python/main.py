@@ -49,6 +49,9 @@ class MainProcess:
     if task == "login":
       await task_navigator.login()
       sys.exit(0)
+    elif task == "joingroup":
+      await task_navigator.join_group()
+      sys.exit(0)
     else:
       self.logger.error(f"Unknown task: {task}")
       sys.exit(1)

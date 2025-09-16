@@ -1,7 +1,10 @@
+import sys
 from typing import Any
 
 from database.services.account import AccountService
 from browser.account import AccountAutomationService
+from browser.group import GroupAutomationService
+from database.services.group import GroupService
 from utils.dialog import DialogUtil
 
 
@@ -25,3 +28,20 @@ class TaskNavigator:
     is_blocked = await DialogUtil.confirmation("Account Status", "Is the account blocked?")
     account.is_block = is_blocked
     await account_service.update_account(account)
+  
+  async def join_group(self) -> None:
+    group_id = self.config.get("group_id", None)
+    if not group_id:
+      raise ValueError("--group_id is required for join_group task")
+    gs = GroupService()
+    group = await gs.get_group_by_id(int(group_id), include_account=True)
+    if not group:
+      raise ValueError(f"Group with id {group_id} not found")
+    gas = GroupAutomationService()
+    is_ok = await gas.join_group(group)
+    group.is_joined = is_ok
+    await gs.update_group(group)
+    if not is_ok:
+      sys.exit(1)
+    else:
+      sys.exit(0)

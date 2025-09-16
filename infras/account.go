@@ -1,10 +1,10 @@
 package infras
 
 type CreateAccountDTO struct {
-	Email      *string `json:"email"`
-	Username   *string `json:"username"`
-	Password   *string `json:"password"`
-	IsBlock    *bool   `json:"is_block"`
+	Email    *string `json:"email"`
+	Username *string `json:"username"`
+	Password *string `json:"password"`
+	IsBlock  *bool   `json:"is_block"`
 }
 
 type GetAccountsDTO struct {
@@ -14,6 +14,14 @@ type GetAccountsDTO struct {
 
 type GetAccountDTO struct {
 	ID int32 `query:"id"`
+}
+
+type LoginAccountDTO struct {
+	UID int32 `json:"uid"`
+}
+
+type JoinGroupDTO struct {
+	GID int32 `json:"gid"`
 }
 
 type DeleteAccountsDTO struct {

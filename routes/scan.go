@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/services"
 )
@@ -9,15 +8,12 @@ import (
 func InitScanRoutes(s infras.Server) {
 	e := s.Echo
 	
-	e.POST("/scan/group/:id", func(c echo.Context) error {
-		return services.ScanGroupFeed(s, c)
-	})
+scanService := services.ScanService{
+		Server: s,
+	}
+	e.POST("/scan/group/:id", scanService.ScanGroupFeed)
 
-	e.POST("/scan/post/:id", func(c echo.Context) error {
-		return services.ScanPostComments(s, c)
-	})
+	e.POST("/scan/post/:id", scanService.ScanPostComments)
 
-	e.POST("/scan/profile/:id", func(c echo.Context) error {
-		return services.ScanUserProfile(s, c)
-	})
+	e.POST("/scan/profile/:id", scanService.ScanUserProfile)
 }

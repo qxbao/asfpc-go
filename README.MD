@@ -33,7 +33,7 @@ cd asfpc-go
 ```
 3. Install Go dependencies:
 ```bash
-go mod tidy
+go mod download
 ```
 
 ## Setup
@@ -47,8 +47,15 @@ POSTGRE_PASSWORD=<your_postgres_password>
 POSTGRE_DBNAME=<your_postgres_dbname>
 POSTGRE_HOST=<your_postgres_host>
 POSTGRE_PORT=<your_postgres_port>
-HOST=<your_host>
-PORT=<your_port>
+HOST=<server_host>
+PORT=<server_port>
+PYTHON_ENV_NAME=<your_python_venv_folder_name>
+```
+
+3. Set up Python virtual environment and install dependencies
+You can use provided scripts (for Powershell):
+```powershell
+./venv.ps1
 ```
 
 ## Usage

@@ -15,8 +15,10 @@ func InitAccountRoutes(s infras.Server) {
 	e.GET("/account/stats", services.GetAccountStats)
 	e.GET("/account/group/list", services.GetGroupsByAccountID)
 	e.POST("/account/update/credentials", services.UpdateAccountCredentials)
+	e.POST("/account/login", services.LoginAccount)
 	e.POST("/account/add", services.AddAccount)
 	e.POST("/account/token/gen", services.GenAccountsAT)
+	e.POST("/account/group/join", services.JoinGroup)
 	e.POST("/account/group/add", services.CreateGroup)
 	e.DELETE("/account/delete", services.DeleteAccounts)
 }

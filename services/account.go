@@ -2,7 +2,9 @@ package services
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -11,7 +13,7 @@ import (
 	"github.com/qxbao/asfpc/infras"
 )
 
-type AccountService struct{
+type AccountService struct {
 	Server infras.Server
 }
 
@@ -149,7 +151,7 @@ func (s *AccountService) UpdateAccountCredentials(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.UpdateAccountCredentialsDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string] string{
+		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid request body: " + err.Error(),
 		})
 	}
@@ -160,13 +162,13 @@ func (s *AccountService) UpdateAccountCredentials(c echo.Context) error {
 		Password: *dto.Password,
 	})
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string] string{
+		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update account credentials: " + err.Error(),
 		})
 	}
-	return c.JSON(http.StatusOK, map[string]any {
+	return c.JSON(http.StatusOK, map[string]any{
 		"message": "Account credentials updated successfully",
-		"data": account,
+		"data":    account,
 	})
 }
 
@@ -241,6 +243,45 @@ func (s *AccountService) GenAccountsAT(c echo.Context) error {
 		},
 	})
 }
+
+func (s *AccountService) LoginAccount(c echo.Context) error {
+	dto := new(infras.LoginAccountDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+	pythonService := PythonService{
+		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+	}
+	res, err := pythonService.RunScript("--task=login", fmt.Sprintf("--uid=%d", dto.UID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "Failed to execute login script: " + err.Error(),
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"data": res,
+	})
+}
+
+func (s *AccountService) JoinGroup(c echo.Context) error {
+	dto := new(infras.JoinGroupDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+	pythonService := PythonService{
+		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+	}
+	res, err := pythonService.RunScript("--task=joingroup", fmt.Sprintf("--group_id=%d", dto.GID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "Failed to execute login script: " + err.Error(),
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"data": res,
+	})
+}
+
 
 func (s *AccountService) CreateGroup(c echo.Context) error {
 	queries := s.Server.Queries

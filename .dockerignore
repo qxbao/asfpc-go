@@ -1,2 +1,8 @@
 *.env
 *.ps1
+resources/
+venv/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
@@ -73,9 +72,13 @@ func getStringOrDefault(ptr *string, defaultValue string) string {
 	return defaultValue
 }
 
-func ScanGroupFeed(s infras.Server, c echo.Context) error {
+type ScanService struct {
+	Server infras.Server
+}
+
+func (s ScanService) ScanGroupFeed(c echo.Context) error {
 	groupId := c.Param("id")
-	queries := s.Queries
+	queries := s.Server.Queries
 
 	if groupId == "" {
 		return c.JSON(400, map[string]string{"error": "Group ID is required"})
@@ -97,7 +100,7 @@ func ScanGroupFeed(s infras.Server, c echo.Context) error {
 	}
 
 	posts, err := fg.GetGroupFeed(&group.GroupID, &map[string]string{
-		"limit": s.GetConfig(
+		"limit": s.Server.GetConfig(
 			"facebook_group_feed_limit", "20",
 		),
 	})
@@ -173,9 +176,9 @@ func ScanGroupFeed(s infras.Server, c echo.Context) error {
 	return c.JSON(200, response)
 }
 
-func ScanPostComments(s infras.Server, c echo.Context) error {
+func (s ScanService) ScanPostComments(c echo.Context) error {
 	postId := c.Param("id")
-	queries := s.Queries
+	queries := s.Server.Queries
 
 	postIDInt, err := strconv.ParseInt(postId, 10, 32)
 	if err != nil {
@@ -193,7 +196,7 @@ func ScanPostComments(s infras.Server, c echo.Context) error {
 	}
 
 	comments, err := fg.GetPostComments(&post.PostID, &map[string]string{
-		"limit": s.GetConfig(
+		"limit": s.Server.GetConfig(
 			"facebook_post_comments_limit",
 			"50",
 		),
@@ -281,7 +284,7 @@ func ScanPostComments(s infras.Server, c echo.Context) error {
 	return c.JSON(200, response)
 }
 
-func ScanUserProfile(s infras.Server, c echo.Context) error {
+func (s ScanService) ScanUserProfile(c echo.Context) error {
 	userId := c.Param("id")
 	userIdInt, err := strconv.ParseInt(userId, 10, 32)
 
@@ -289,7 +292,7 @@ func ScanUserProfile(s infras.Server, c echo.Context) error {
 		return c.JSON(400, map[string]string{"error": "Invalid User ID"})
 	}
 
-	queries := s.Queries
+	queries := s.Server.Queries
 	userProfile, err := queries.GetProfileByIdWithAccount(c.Request().Context(), int32(userIdInt))
 
 	if err != nil {
