@@ -10,7 +10,7 @@ import argparse
 from database.database import Database
 from utils.navigator import TaskNavigator
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 class MainProcess:
   def __init__(self):

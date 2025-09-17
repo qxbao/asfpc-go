@@ -73,7 +73,7 @@ func (s ScanService) ScanAllGroups() {
 			if err != nil {
 				errChannel <- GroupScanError{
 					AccountID: accountId,
-					Error:     []error{fmt.Errorf("Failed to fetch group for account %d: %v", accountId, err)},
+					Error:     []error{fmt.Errorf("failed to fetch group for account %d: %v", accountId, err)},
 				}
 				return
 			}
@@ -82,7 +82,7 @@ func (s ScanService) ScanAllGroups() {
 			for _, group := range groups {
 				result, err := s.scanPosts(ctx, &group, ers)
 				if err != nil {
-					ers = append(ers, fmt.Errorf("Failed to scan group %s: %v", group.GroupID, err))
+					ers = append(ers, fmt.Errorf("failed to scan group %s: %v", group.GroupID, err))
 				} else {
 					success = append(success, *result)
 				}
@@ -139,7 +139,7 @@ func (s ScanService) scanPosts(ctx context.Context, group *db.GetGroupsToScanRow
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch group feed: %s", err.Error())
+		return nil, fmt.Errorf("failed to fetch group feed: %s", err.Error())
 	}
 	logger.Infof("Fetched %d posts from group %d", len(*posts.Data), group.ID)
 
@@ -152,7 +152,7 @@ func (s ScanService) scanPosts(ctx context.Context, group *db.GetGroupsToScanRow
 		go func(post infras.Post) {
 			defer wg.Done()
 			if post.ID == nil || post.UpdatedTime == nil {
-				ers = append(ers, fmt.Errorf("Post ID or UpdatedTime is nil for group %s", group.GroupID))
+				ers = append(ers, fmt.Errorf("post ID or UpdatedTime is nil for group %s", group.GroupID))
 				return
 			}
 			if post.Comments.Count == nil || *post.Comments.Count == 0 {
@@ -161,7 +161,7 @@ func (s ScanService) scanPosts(ctx context.Context, group *db.GetGroupsToScanRow
 
 			updatedTime, err := time.Parse("2006-01-02T15:04:05-0700", *post.UpdatedTime)
 			if err != nil {
-				ers = append(ers, fmt.Errorf("Failed to parse UpdatedTime for post %s: %v", *post.ID, err))
+				ers = append(ers, fmt.Errorf("failed to parse UpdatedTime for post %s: %v", *post.ID, err))
 				return
 			}
 
@@ -195,12 +195,12 @@ func (s ScanService) scanPosts(ctx context.Context, group *db.GetGroupsToScanRow
 						ScrapedByID: group.AccountID.Int32,
 					})
 					if err != nil {
-						ers = append(ers, fmt.Errorf("Failed to create profile for comment author %s: %v", comment.From.ID.String(), err))
+						ers = append(ers, fmt.Errorf("failed to create profile for comment author %s: %v", comment.From.ID.String(), err))
 						continue
 					}
 					parsedTime, err := time.Parse("2006-01-02T15:04:05-0700", *comment.CreatedTime)
 					if err != nil {
-						ers = append(ers, fmt.Errorf("Failed to parse CreatedTime for comment %s: %v", *comment.ID, err))
+						ers = append(ers, fmt.Errorf("failed to parse CreatedTime for comment %s: %v", *comment.ID, err))
 						continue
 					}
 					_, err = s.Server.Queries.CreateComment(ctx, db.CreateCommentParams{
@@ -210,6 +210,10 @@ func (s ScanService) scanPosts(ctx context.Context, group *db.GetGroupsToScanRow
 						AuthorID:  profile.ID,
 						CreatedAt: parsedTime,
 					})
+					if err != nil {
+						ers = append(ers, fmt.Errorf("failed to create comment %s: %v", *comment.ID, err))
+						continue
+					}
 				}
 			}
 		}(post)
@@ -280,7 +284,7 @@ func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesT
 	fetchedProfile, err := fg.GetUserDetails(profile.FacebookID, &map[string]string{})
 
 	if err != nil {
-		return fmt.Errorf("Failed to fetch user profile: %s", err.Error())
+		return fmt.Errorf("failed to fetch user profile: %s", err.Error())
 	}
 
 	params := db.UpdateProfileAfterScanParams{
@@ -301,7 +305,7 @@ func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesT
 
 	_, err = s.Server.Queries.UpdateProfileAfterScan(ctx, params)
 	if err != nil {
-		return fmt.Errorf("Failed to update profile: %s", err.Error())
+		return fmt.Errorf("failed to update profile: %s", err.Error())
 	}
 	return nil
 }

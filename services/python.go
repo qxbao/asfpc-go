@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"os"
 )
 
-const PythonPath = "services/python"
+var ex, _ = os.Executable()
+
+var PythonPath = filepath.Join(filepath.Dir(ex), "python")
 
 type PythonService struct {
 	EnvName string
@@ -21,7 +24,7 @@ func (ps PythonService) RunScript(args ...string) (string, error) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("Python script failed: %v\nOutput: %s", err, string(output))
+		return string(output), fmt.Errorf("python script failed: %v\nOutput: %s", err, string(output))
 	}
 
 	return string(output), nil
