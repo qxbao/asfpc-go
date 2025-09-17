@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
-	"github.com/qxbao/asfpc/cron"
 )
 
 type Server struct {
@@ -13,7 +12,6 @@ type Server struct {
 	Database     *sql.DB
 	Queries      *db.Queries
 	Echo         *echo.Echo
-	Scheduler    *cron.CronScheduler
 	GlobalConfig *map[string]string
 }
 

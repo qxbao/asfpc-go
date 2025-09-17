@@ -124,19 +124,9 @@ func (fg FacebookGraph) GetGroupFeed(groupId *string, kwargs *map[string]string)
 		return infras.GetGroupPostsResponse{}, fmt.Errorf("this account does not have an access token")
 	}
 
-	path := fmt.Sprintf("%s/%s/feed", LatestAPIVersion, *groupId)
+	path := fmt.Sprintf("%s/feed", *groupId)
 	(*kwargs)["access_token"] = fg.AccessToken
 	return graphQuery[infras.GetGroupPostsResponse](path, kwargs)
-}
-
-func (fg FacebookGraph) GetPostComments(postId *string, kwargs *map[string]string) (infras.GetPostCommentsResponse, error) {
-	if fg.AccessToken == "" {
-		return infras.GetPostCommentsResponse{}, fmt.Errorf("this account does not have an access token")
-	}
-
-	path := fmt.Sprintf("%s/%s/comments", LatestAPIVersion, *postId)
-	(*kwargs)["access_token"] = fg.AccessToken
-	return graphQuery[infras.GetPostCommentsResponse](path, kwargs)
 }
 
 func (fg FacebookGraph) GetUserDetails(userId string, kwargs *map[string]string) (infras.UserProfile, error) {

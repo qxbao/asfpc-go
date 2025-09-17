@@ -326,6 +326,65 @@ func (q *Queries) GetAllConfigs(ctx context.Context) ([]Config, error) {
 	return items, nil
 }
 
+const getCommentsToScan = `-- name: GetCommentsToScan :many
+SELECT c.id, c.content, c.is_analyzed, c.created_at, c.inserted_at, c.post_id, c.author_id, c.comment_id, a.access_token FROM public.comment c
+JOIN public.post p ON c.post_id = p.id
+JOIN public."group" g ON p.group_id = g.id
+JOIN public.account a ON g.account_id = a.id
+WHERE c.is_analyzed = false AND g.account_id = $1
+ORDER BY c.inserted_at ASC LIMIT $2
+`
+
+type GetCommentsToScanParams struct {
+	AccountID sql.NullInt32
+	Limit     int32
+}
+
+type GetCommentsToScanRow struct {
+	ID          int32
+	Content     string
+	IsAnalyzed  bool
+	CreatedAt   time.Time
+	InsertedAt  time.Time
+	PostID      int32
+	AuthorID    int32
+	CommentID   string
+	AccessToken sql.NullString
+}
+
+func (q *Queries) GetCommentsToScan(ctx context.Context, arg GetCommentsToScanParams) ([]GetCommentsToScanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getCommentsToScan, arg.AccountID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCommentsToScanRow
+	for rows.Next() {
+		var i GetCommentsToScanRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Content,
+			&i.IsAnalyzed,
+			&i.CreatedAt,
+			&i.InsertedAt,
+			&i.PostID,
+			&i.AuthorID,
+			&i.CommentID,
+			&i.AccessToken,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getGroupById = `-- name: GetGroupById :one
 SELECT id, group_id, group_name, is_joined, account_id, scanned_at FROM public."group" WHERE id = $1
 `
@@ -418,9 +477,14 @@ func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullIn
 const getGroupsToScan = `-- name: GetGroupsToScan :many
 SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
-WHERE g.is_joined = true
-ORDER BY scanned_at ASC LIMIT $1
+WHERE g.is_joined = true AND g.account_id = $1
+ORDER BY scanned_at ASC LIMIT $2
 `
+
+type GetGroupsToScanParams struct {
+	AccountID sql.NullInt32
+	Limit     int32
+}
 
 type GetGroupsToScanRow struct {
 	ID          int32
@@ -432,8 +496,8 @@ type GetGroupsToScanRow struct {
 	AccessToken sql.NullString
 }
 
-func (q *Queries) GetGroupsToScan(ctx context.Context, limit int32) ([]GetGroupsToScanRow, error) {
-	rows, err := q.db.QueryContext(ctx, getGroupsToScan, limit)
+func (q *Queries) GetGroupsToScan(ctx context.Context, arg GetGroupsToScanParams) ([]GetGroupsToScanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getGroupsToScan, arg.AccountID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -453,6 +517,39 @@ func (q *Queries) GetGroupsToScan(ctx context.Context, limit int32) ([]GetGroups
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getOKAccountIds = `-- name: GetOKAccountIds :many
+SELECT t.id
+FROM (SELECT a.id,
+  (SELECT COUNT(*) FROM public."group" g WHERE g.account_id = a.id) AS group_count
+  FROM public.account a
+  WHERE a.is_block = false AND a.access_token IS NOT NULL
+) t
+WHERE t.group_count > 0
+`
+
+func (q *Queries) GetOKAccountIds(ctx context.Context) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getOKAccountIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var id int32
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -528,9 +625,14 @@ const getPostsToScan = `-- name: GetPostsToScan :many
 SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.access_token FROM public.post p
 JOIN "group" g ON p.group_id = g.id
 JOIN account a ON g.account_id = a.id
-WHERE is_analyzed=false
-ORDER BY inserted_at ASC LIMIT $1
+WHERE is_analyzed=false AND g.account_id = $1
+ORDER BY inserted_at ASC LIMIT $2
 `
+
+type GetPostsToScanParams struct {
+	AccountID sql.NullInt32
+	Limit     int32
+}
 
 type GetPostsToScanRow struct {
 	ID          int32
@@ -543,8 +645,8 @@ type GetPostsToScanRow struct {
 	AccessToken sql.NullString
 }
 
-func (q *Queries) GetPostsToScan(ctx context.Context, limit int32) ([]GetPostsToScanRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsToScan, limit)
+func (q *Queries) GetPostsToScan(ctx context.Context, arg GetPostsToScanParams) ([]GetPostsToScanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPostsToScan, arg.AccountID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -667,6 +769,105 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 		&i.AccessToken,
 	)
 	return i, err
+}
+
+const getProfilesToScan = `-- name: GetProfilesToScan :many
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.access_token, a.id as account_id
+FROM public.user_profile up
+JOIN public.account a ON up.scraped_by_id = a.id
+WHERE up.is_scanned = false AND a.is_block = false AND a.access_token IS NOT NULL
+ORDER BY up.updated_at ASC LIMIT $1
+`
+
+type GetProfilesToScanRow struct {
+	ID                 int32
+	FacebookID         string
+	Name               sql.NullString
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ScrapedByID        int32
+	IsScanned          bool
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+	ProfileUrl         string
+	AccessToken        sql.NullString
+	AccountID          int32
+}
+
+func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProfilesToScanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesToScan, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProfilesToScanRow
+	for rows.Next() {
+		var i GetProfilesToScanRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FacebookID,
+			&i.Name,
+			&i.Bio,
+			&i.Location,
+			&i.Work,
+			&i.Education,
+			&i.RelationshipStatus,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ScrapedByID,
+			&i.IsScanned,
+			&i.Hometown,
+			&i.Locale,
+			&i.Gender,
+			&i.Birthday,
+			&i.Email,
+			&i.Phone,
+			&i.ProfileUrl,
+			&i.AccessToken,
+			&i.AccountID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const logAction = `-- name: LogAction :exec
+INSERT INTO public.log (account_id, "action", target_id, description, created_at)
+VALUES ($1, $2, $3, $4, NOW())
+`
+
+type LogActionParams struct {
+	AccountID   sql.NullInt32
+	Action      string
+	TargetID    sql.NullInt32
+	Description sql.NullString
+}
+
+func (q *Queries) LogAction(ctx context.Context, arg LogActionParams) error {
+	_, err := q.db.ExecContext(ctx, logAction,
+		arg.AccountID,
+		arg.Action,
+		arg.TargetID,
+		arg.Description,
+	)
+	return err
 }
 
 const updateAccountAccessToken = `-- name: UpdateAccountAccessToken :one

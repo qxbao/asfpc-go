@@ -1,133 +1,167 @@
 package services
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"github.com/labstack/echo/v4"
+
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	lg "github.com/qxbao/asfpc/pkg/logger"
+	"github.com/qxbao/asfpc/pkg/utils"
+	"go.uber.org/zap"
 )
-
-func toNullString(ptr *string) sql.NullString {
-	if ptr != nil {
-		return sql.NullString{String: *ptr, Valid: true}
-	}
-	return sql.NullString{Valid: false}
-}
-
-func extractEntityName(entity *infras.EntityNameID) sql.NullString {
-	if entity != nil && entity.Name != nil {
-		return sql.NullString{String: *entity.Name, Valid: true}
-	}
-	return sql.NullString{Valid: false}
-}
-
-func joinWork(work *[]infras.Work) sql.NullString {
-	if work == nil || len(*work) == 0 {
-		return sql.NullString{Valid: false}
-	}
-
-	var workStrings []string
-	for _, w := range *work {
-		if w.Employer != nil && w.Employer.Name != nil {
-			workStr := *w.Employer.Name
-			if w.Position != nil && w.Position.Name != nil {
-				workStr += " - " + *w.Position.Name
-			}
-			workStrings = append(workStrings, workStr)
-		}
-	}
-
-	if len(workStrings) > 0 {
-		return sql.NullString{String: strings.Join(workStrings, "; "), Valid: true}
-	}
-	return sql.NullString{Valid: false}
-}
-
-func joinEducation(education *[]infras.Education) sql.NullString {
-	if education == nil || len(*education) == 0 {
-		return sql.NullString{Valid: false}
-	}
-
-	var eduStrings []string
-	for _, edu := range *education {
-		if edu.School != nil && edu.School.Name != nil {
-			eduStrings = append(eduStrings, *edu.School.Name)
-		}
-	}
-
-	if len(eduStrings) > 0 {
-		return sql.NullString{String: strings.Join(eduStrings, "; "), Valid: true}
-	}
-	return sql.NullString{Valid: false}
-}
-
-func getStringOrDefault(ptr *string, defaultValue string) string {
-	if ptr != nil {
-		return *ptr
-	}
-	return defaultValue
-}
 
 type ScanService struct {
 	Server infras.Server
 }
 
-func (s ScanService) ScanGroupFeed(c echo.Context) error {
-	groupId := c.Param("id")
-	queries := s.Server.Queries
+type GroupScanError struct {
+	AccountID int32
+	Error     []error
+}
 
-	if groupId == "" {
-		return c.JSON(400, map[string]string{"error": "Group ID is required"})
-	}
+type ScanPostResult struct {
+	GID     int32
+	Total   int32
+	Success int32
+}
 
-	groupIDInt, err := strconv.ParseInt(groupId, 10, 32)
+var loggerName string = "ScanningService"
+var logger *zap.SugaredLogger = lg.GetLogger(&loggerName)
+
+type GroupScanSuccess struct {
+	AccountID int32
+	Result    []ScanPostResult
+}
+
+func (s ScanService) ScanAllGroups() {
+	logger.Info("Starting cron task [ScanAllGroups]")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	ids, err := s.Server.Queries.GetOKAccountIds(
+		ctx,
+	)
+
 	if err != nil {
-		return c.JSON(400, map[string]string{"error": "Invalid Group ID"})
+		logger.Errorf("Error fetching account IDs: %v", err)
+		return
 	}
 
-	group, err := queries.GetGroupByIdWithAccount(c.Request().Context(), int32(groupIDInt))
+	groupLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_GROUP_LIMIT", "5"), 10, 32)
+	wg := sync.WaitGroup{}
+	errChannel := make(chan GroupScanError, len(ids))
+	successChannel := make(chan GroupScanSuccess, len(ids))
 
-	if err != nil {
-		return c.JSON(404, map[string]string{"error": "Cannot find group: " + err.Error()})
+	for _, id := range ids {
+		wg.Add(1)
+		go func(accountId int32) {
+			defer wg.Done()
+			groups, err := s.Server.Queries.GetGroupsToScan(ctx, db.GetGroupsToScanParams{
+				AccountID: sql.NullInt32{
+					Int32: accountId,
+					Valid: true,
+				},
+				Limit: int32(groupLimit),
+			})
+			logger.Infof("Account %d: Fetched %d groups to scan", accountId, len(groups))
+			if err != nil {
+				errChannel <- GroupScanError{
+					AccountID: accountId,
+					Error:     []error{fmt.Errorf("Failed to fetch group for account %d: %v", accountId, err)},
+				}
+				return
+			}
+			success := []ScanPostResult{}
+			ers := []error{}
+			for _, group := range groups {
+				result, err := s.scanPosts(ctx, &group, ers)
+				if err != nil {
+					ers = append(ers, fmt.Errorf("Failed to scan group %s: %v", group.GroupID, err))
+				} else {
+					success = append(success, *result)
+				}
+			}
+			errChannel <- GroupScanError{
+				AccountID: accountId,
+				Error:     ers,
+			}
+			successChannel <- GroupScanSuccess{
+				AccountID: accountId,
+				Result:    success,
+			}
+		}(id)
+	}
+	wg.Wait()
+	close(errChannel)
+	close(successChannel)
+
+	for err := range errChannel {
+		for _, er := range err.Error {
+			s.Server.Queries.LogAction(ctx, db.LogActionParams{
+				AccountID:   sql.NullInt32{Int32: err.AccountID, Valid: true},
+				Action:      "scan_group",
+				TargetID:    sql.NullInt32{Valid: false},
+				Description: sql.NullString{String: er.Error(), Valid: true},
+			})
+			logger.Errorf("Account %d scan group failed: %s", err.AccountID, er.Error())
+		}
 	}
 
+	for success := range successChannel {
+		for _, res := range success.Result {
+			s.Server.Queries.LogAction(ctx, db.LogActionParams{
+				AccountID:   sql.NullInt32{Int32: success.AccountID, Valid: true},
+				Action:      "scan_group",
+				TargetID:    sql.NullInt32{Int32: res.GID, Valid: true},
+				Description: sql.NullString{String: fmt.Sprintf("Scanned group ID %d: %d/%d posts", res.GID, res.Success, res.Total), Valid: true},
+			})
+		}
+		logger.Infof("Account %d scan group successfully: %d group(s)", success.AccountID, len(success.Result))
+	}
+	logger.Info("ScanAllGroups task completed.")
+}
+
+func (s ScanService) scanPosts(ctx context.Context, group *db.GetGroupsToScanRow, ers []error) (*ScanPostResult, error) {
+	logger.Infof("Scanning posts for group %s (ID: %d)", group.GroupName, group.ID)
+	feedLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_GROUP_FEED_LIMIT", "10"), 10, 32)
 	fg := FacebookGraph{
 		AccessToken: group.AccessToken.String,
 	}
-
 	posts, err := fg.GetGroupFeed(&group.GroupID, &map[string]string{
-		"limit": s.Server.GetConfig(
-			"facebook_group_feed_limit", "20",
-		),
+		"limit": fmt.Sprintf("%d", feedLimit),
+		"order": "chronological",
 	})
 
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "Failed to fetch group feed: " + err.Error()})
+		return nil, fmt.Errorf("Failed to fetch group feed: %s", err.Error())
 	}
+	logger.Infof("Fetched %d posts from group %d", len(*posts.Data), group.ID)
 
-	queries.UpdateGroupScannedAt(c.Request().Context(), group.ID)
-
-	var wg sync.WaitGroup
-
-	errChan := make(chan error, len(*posts.Data))
-	successCount := make(chan int, len(*posts.Data))
-
+	s.Server.Queries.UpdateGroupScannedAt(ctx, group.ID)
+	wg := sync.WaitGroup{}
+	successCountChannel := make(chan int32)
+	successCount := int32(0)
 	for _, post := range *posts.Data {
 		wg.Add(1)
 		go func(post infras.Post) {
 			defer wg.Done()
-
 			if post.ID == nil || post.UpdatedTime == nil {
+				ers = append(ers, fmt.Errorf("Post ID or UpdatedTime is nil for group %s", group.GroupID))
+				return
+			}
+			if post.Comments.Count == nil || *post.Comments.Count == 0 {
 				return
 			}
 
 			updatedTime, err := time.Parse("2006-01-02T15:04:05-0700", *post.UpdatedTime)
 			if err != nil {
-				errChan <- err
+				ers = append(ers, fmt.Errorf("Failed to parse UpdatedTime for post %s: %v", *post.ID, err))
 				return
 			}
 
@@ -138,203 +172,154 @@ func (s ScanService) ScanGroupFeed(c echo.Context) error {
 
 			postId := strings.Split(*post.ID, "_")[1]
 
-			queries.CreatePost(c.Request().Context(), db.CreatePostParams{
+			p, _ := s.Server.Queries.CreatePost(ctx, db.CreatePostParams{
 				PostID:    postId,
 				Content:   content,
 				CreatedAt: updatedTime,
 				GroupID:   group.ID,
 			})
-			successCount <- 1
+			successCountChannel <- 1
+
+			if post.Comments != nil && post.Comments.Data != nil {
+				commentsLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_COMMENTS_LIMIT", "5"), 10, 32)
+				for i, comment := range *post.Comments.Data {
+					if i >= int(commentsLimit) {
+						break
+					}
+					if comment.From == nil || comment.From.ID == nil {
+						continue
+					}
+					profile, err := s.Server.Queries.CreateProfile(ctx, db.CreateProfileParams{
+						FacebookID:  comment.From.ID.String(),
+						Name:        utils.ToNullString(comment.From.Name),
+						ScrapedByID: group.AccountID.Int32,
+					})
+					if err != nil {
+						ers = append(ers, fmt.Errorf("Failed to create profile for comment author %s: %v", comment.From.ID.String(), err))
+						continue
+					}
+					parsedTime, err := time.Parse("2006-01-02T15:04:05-0700", *comment.CreatedTime)
+					if err != nil {
+						ers = append(ers, fmt.Errorf("Failed to parse CreatedTime for comment %s: %v", *comment.ID, err))
+						continue
+					}
+					_, err = s.Server.Queries.CreateComment(ctx, db.CreateCommentParams{
+						CommentID: *comment.ID,
+						PostID:    p.ID,
+						Content:   utils.GetStringOrDefault(comment.Message, ""),
+						AuthorID:  profile.ID,
+						CreatedAt: parsedTime,
+					})
+				}
+			}
 		}(post)
 	}
 
-	wg.Wait()
-	close(errChan)
-	close(successCount)
+	go func() {
+		wg.Wait()
+		close(successCountChannel)
+	}()
 
-	processed := 0
-	for range successCount {
-		processed++
-	}
+	successCount = s.countSuccesses(successCountChannel, 10*time.Second)
 
-	var errors []string
-	for err := range errChan {
-		errors = append(errors, err.Error())
-	}
-
-	response := map[string]any{
-		"posts_fetched":   len(*posts.Data),
-		"posts_processed": processed,
-		"data":            *posts.Data,
-	}
-
-	if len(errors) > 0 {
-		response["errors"] = errors
-		response["error_count"] = len(errors)
-	}
-
-	return c.JSON(200, response)
+	return &ScanPostResult{
+		GID:     group.ID,
+		Total:   int32(len(*posts.Data)),
+		Success: successCount,
+	}, nil
 }
 
-func (s ScanService) ScanPostComments(c echo.Context) error {
-	postId := c.Param("id")
-	queries := s.Server.Queries
+func (s ScanService) ScanAllProfiles() {
+	logger.Info("Starting cron task [ScanAllProfiles]")
+	ctx, ctx_cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer ctx_cancel()
 
-	postIDInt, err := strconv.ParseInt(postId, 10, 32)
-	if err != nil {
-		return c.JSON(400, map[string]string{"error": "Invalid Post ID"})
-	}
-
-	post, err := queries.GetPostByIdWithAccount(c.Request().Context(), int32(postIDInt))
+	profileLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_PROFILE_SCAN_LIMIT", "80"), 10, 32)
+	profiles, err := s.Server.Queries.GetProfilesToScan(ctx, int32(profileLimit))
 
 	if err != nil {
-		return c.JSON(404, map[string]string{"error": "Cannot find post: " + err.Error()})
+		logger.Errorf("Failed to fetch profiles to scan: %s", err.Error())
+		return
 	}
+	logger.Infof("Fetched %d profiles to scan", len(profiles))
 
-	fg := FacebookGraph{
-		AccessToken: post.AccessToken.String,
-	}
-
-	comments, err := fg.GetPostComments(&post.PostID, &map[string]string{
-		"limit": s.Server.GetConfig(
-			"facebook_post_comments_limit",
-			"50",
-		),
-	})
-
-	if err != nil {
-		return c.JSON(500, map[string]string{"error": "Failed to fetch post comments: " + err.Error()})
-	}
-
-	var wg sync.WaitGroup
-
-	errChan := make(chan error, len(*comments.Data))
-	successCount := make(chan int, len(*comments.Data))
-
-	for _, comment := range *comments.Data {
+	var successCount int = 0
+	wg := sync.WaitGroup{}
+	for _, profile := range profiles {
 		wg.Add(1)
-		go func(comment infras.Comment) {
+		go func(profile db.GetProfilesToScanRow) {
 			defer wg.Done()
-
-			if comment.ID == nil || comment.CreatedTime == nil {
-				return
-			}
-
-			createdTime, err := time.Parse("2006-01-02T15:04:05-0700", *comment.CreatedTime)
-
+			err := s.processProfile(ctx, profile)
 			if err != nil {
-				errChan <- err
-				return
+				s.Server.Queries.LogAction(ctx, db.LogActionParams{
+					AccountID:   sql.NullInt32{Int32: profile.AccountID, Valid: true},
+					Action:      "scan_profile",
+					TargetID:    sql.NullInt32{Int32: profile.ID, Valid: true},
+					Description: sql.NullString{String: fmt.Sprintf("scan profile %d failed: %s", profile.ID, err.Error()), Valid: true},
+				})
+				logger.Errorf("Failed to process profile %d: %s", profile.ID, err.Error())
+			} else {
+				s.Server.Queries.LogAction(ctx, db.LogActionParams{
+					AccountID:   sql.NullInt32{Int32: profile.AccountID, Valid: true},
+					Action:      "scan_profile",
+					TargetID:    sql.NullInt32{Int32: profile.ID, Valid: true},
+					Description: sql.NullString{String: fmt.Sprintf("scanned profile %d successfully", profile.ID), Valid: true},
+				})
+				successCount++
 			}
-
-			content := ""
-			if comment.Message != nil {
-				content = *comment.Message
-			}
-			author, err := queries.CreateProfile(c.Request().Context(), db.CreateProfileParams{
-				Name: sql.NullString{
-					String: *comment.From.Name,
-					Valid:  true,
-				},
-				FacebookID:  *comment.From.ID,
-				ScrapedByID: post.AccountID,
-			})
-
-			if err != nil {
-				errChan <- err
-				return
-			}
-
-			queries.CreateComment(c.Request().Context(), db.CreateCommentParams{
-				PostID:    post.ID,
-				CommentID: *comment.ID,
-				Content:   content,
-				CreatedAt: createdTime,
-				AuthorID:  author.ID,
-			})
-			successCount <- 1
-		}(comment)
+		}(profile)
 	}
-
 	wg.Wait()
-	close(errChan)
-	close(successCount)
-
-	processed := 0
-	for range successCount {
-		processed++
-	}
-
-	var errors []string
-	for err := range errChan {
-		errors = append(errors, err.Error())
-	}
-
-	response := map[string]any{
-		"comments_fetched":   len(*comments.Data),
-		"comments_processed": processed,
-		"data":               *comments.Data,
-	}
-
-	if len(errors) > 0 {
-		response["errors"] = errors
-		response["error_count"] = len(errors)
-	}
-
-	return c.JSON(200, response)
+	logger.Infof("ScanAllProfiles task completed: %d/%d", successCount, len(profiles))
 }
 
-func (s ScanService) ScanUserProfile(c echo.Context) error {
-	userId := c.Param("id")
-	userIdInt, err := strconv.ParseInt(userId, 10, 32)
-
-	if err != nil {
-		return c.JSON(400, map[string]string{"error": "Invalid User ID"})
-	}
-
-	queries := s.Server.Queries
-	userProfile, err := queries.GetProfileByIdWithAccount(c.Request().Context(), int32(userIdInt))
-
-	if err != nil {
-		return c.JSON(404, map[string]string{"error": "User profile doesn't exist: " + err.Error()})
-	}
-
+func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesToScanRow) error {
 	fg := FacebookGraph{
-		AccessToken: userProfile.AccessToken.String,
+		AccessToken: profile.AccessToken.String,
 	}
-
-	fetchedProfile, err := fg.GetUserDetails(userProfile.FacebookID, &map[string]string{})
+	fetchedProfile, err := fg.GetUserDetails(profile.FacebookID, &map[string]string{})
 
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "Failed to fetch user profile: " + err.Error()})
+		return fmt.Errorf("Failed to fetch user profile: %s", err.Error())
 	}
 
 	params := db.UpdateProfileAfterScanParams{
-		ID:                 userProfile.ID,
-		Bio:                toNullString(fetchedProfile.About),
-		Email:              toNullString(fetchedProfile.Email),
-		Location:           extractEntityName(fetchedProfile.Location),
-		Hometown:           extractEntityName(fetchedProfile.Hometown),
-		Birthday:           toNullString(fetchedProfile.Birthday),
-		Gender:             toNullString(fetchedProfile.Gender),
-		RelationshipStatus: toNullString(fetchedProfile.RelationshipStatus),
-		Work:               joinWork(fetchedProfile.Work),
-		Education:          joinEducation(fetchedProfile.Education),
-		ProfileUrl:         getStringOrDefault(fetchedProfile.Link, ""),
-		Locale:             getStringOrDefault(fetchedProfile.Locale, "en_US"),
+		ID:                 profile.ID,
+		Bio:                utils.ToNullString(fetchedProfile.About),
+		Email:              utils.ToNullString(fetchedProfile.Email),
+		Location:           utils.ExtractEntityName(fetchedProfile.Location),
+		Hometown:           utils.ExtractEntityName(fetchedProfile.Hometown),
+		Birthday:           utils.ToNullString(fetchedProfile.Birthday),
+		Gender:             utils.ToNullString(fetchedProfile.Gender),
+		RelationshipStatus: utils.ToNullString(fetchedProfile.RelationshipStatus),
+		Work:               utils.JoinWork(fetchedProfile.Work),
+		Education:          utils.JoinEducation(fetchedProfile.Education),
+		ProfileUrl:         utils.GetStringOrDefault(fetchedProfile.Link, ""),
+		Locale:             utils.GetStringOrDefault(fetchedProfile.Locale, "en_US"),
 		Phone:              sql.NullString{Valid: false},
 	}
 
-	_, err = queries.UpdateProfileAfterScan(c.Request().Context(), params)
+	_, err = s.Server.Queries.UpdateProfileAfterScan(ctx, params)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "Failed to update profile: " + err.Error()})
+		return fmt.Errorf("Failed to update profile: %s", err.Error())
 	}
+	return nil
+}
 
-	response := map[string]any{
-		"user_profile":    userProfile,
-		"fetched_profile": fetchedProfile,
-		"message":         "Profile updated successfully",
+func (s ScanService) countSuccesses(ch <-chan int32, timeout time.Duration) int32 {
+	var count int32
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return count
+			}
+			count++
+		case <-timer.C:
+			return count
+		}
 	}
-
-	return c.JSON(200, response)
 }

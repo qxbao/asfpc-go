@@ -18,6 +18,15 @@ SELECT a.id, a.username, a.email, a.updated_at, a.access_token, (
 ) as group_count, COOKIES IS NOT NULL as is_login
 FROM public.account a LIMIT $1 OFFSET $2;
 
+-- name: GetOKAccountIds :many
+SELECT t.id
+FROM (SELECT a.id,
+  (SELECT COUNT(*) FROM public."group" g WHERE g.account_id = a.id) AS group_count
+  FROM public.account a
+  WHERE a.is_block = false AND a.access_token IS NOT NULL
+) t
+WHERE t.group_count > 0;
+
 -- name: UpdateAccountAccessToken :one
 UPDATE public.account
 SET updated_at = NOW(), access_token = $2
@@ -55,8 +64,8 @@ WHERE g.id = $1;
 -- name: GetGroupsToScan :many
 SELECT g.*, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
-WHERE g.is_joined = true
-ORDER BY scanned_at ASC LIMIT $1;
+WHERE g.is_joined = true AND g.account_id = $1
+ORDER BY scanned_at ASC LIMIT $2;
 
 -- name: UpdateGroupScannedAt :exec
 UPDATE public."group"
@@ -72,8 +81,8 @@ RETURNING *;
 SELECT p.*, a.access_token FROM public.post p
 JOIN "group" g ON p.group_id = g.id
 JOIN account a ON g.account_id = a.id
-WHERE is_analyzed=false
-ORDER BY inserted_at ASC LIMIT $1;
+WHERE is_analyzed=false AND g.account_id = $1
+ORDER BY inserted_at ASC LIMIT $2;
 
 -- name: GetPostById :one
 SELECT * FROM public.post WHERE id = $1;
@@ -89,6 +98,14 @@ INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id,
 VALUES ($1, $2, $3, $4, $5, false, NOW())
 RETURNING *;
 
+-- name: GetCommentsToScan :many
+SELECT c.*, a.access_token FROM public.comment c
+JOIN public.post p ON c.post_id = p.id
+JOIN public."group" g ON p.group_id = g.id
+JOIN public.account a ON g.account_id = a.id
+WHERE c.is_analyzed = false AND g.account_id = $1
+ORDER BY c.inserted_at ASC LIMIT $2;
+
 -- name: CreateProfile :one
 INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, updated_at)
 VALUES ($1, $2, $3, NOW(), NOW())
@@ -101,6 +118,13 @@ SELECT * FROM public.user_profile WHERE id = $1;
 SELECT up.*, a.password, a.email, a.username, a.access_token FROM public.user_profile up
 JOIN public.account a ON up.scraped_by_id = a.id
 WHERE up.id = $1;
+
+-- name: GetProfilesToScan :many
+SELECT up.*, a.access_token, a.id as account_id
+FROM public.user_profile up
+JOIN public.account a ON up.scraped_by_id = a.id
+WHERE up.is_scanned = false AND a.is_block = false AND a.access_token IS NOT NULL
+ORDER BY up.updated_at ASC LIMIT $1;
 
 -- name: UpdateProfileAfterScan :one
 UPDATE public.user_profile
@@ -123,3 +147,7 @@ RETURNING *;
 
 -- name: GetAllConfigs :many
 SELECT * FROM public.config;
+
+-- name: LogAction :exec
+INSERT INTO public.log (account_id, "action", target_id, description, created_at)
+VALUES ($1, $2, $3, $4, NOW());

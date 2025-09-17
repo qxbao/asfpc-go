@@ -11,12 +11,14 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/cron"
+	"github.com/qxbao/asfpc/pkg/cron"
+	"github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/routes"
 )
 
 type Server struct {
 	infras.Server
+	Cron *cron.CronService
 }
 
 func (s *Server) Run() {
@@ -27,15 +29,20 @@ func (s *Server) Run() {
 }
 
 func (s *Server) start() {
+	if err := logger.InitLogger(false); err != nil {
+		log.Fatal("Failed to initialize logger:", err)
+	}
+	defer logger.FlushLogger()
+
 	configs := s.loadConfigs()
 	s.GlobalConfig = &configs
 
-	s.Scheduler = &cron.CronScheduler{
-		// queries: s.Queries,
+	s.Cron = &cron.CronService{
+		Server: &s.Server,
 	}
-	s.Scheduler.Setup()
-	s.Scheduler.Start()
-	defer s.Scheduler.S.Shutdown()
+	s.Cron.Setup()
+	s.Cron.Start()
+	defer s.Cron.Scheduler.Shutdown()
 
 	e := echo.New()
 	e.Use(middleware.CORS())
@@ -78,7 +85,8 @@ func (s *Server) initDB() error {
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		log.Println("Connected to the database successfully!")
+		loggerName := "SERVER.GO"
+		logger.GetLogger(&loggerName).Info("Connected to the database successfully!")
 	}
 
 	s.Database = database
@@ -89,7 +97,6 @@ func (s *Server) initDB() error {
 
 func (s Server) initRoute() error {
 	routes.InitAccountRoutes(s.Server)
-	routes.InitScanRoutes(s.Server)
 	return nil
 }
 
@@ -99,7 +106,8 @@ func (s Server) loadConfigs() map[string]string {
 	defer ctx.Done()
 	loadedConfigs, err := s.Queries.GetAllConfigs(ctx)
 	if err != nil {
-		log.Println("Error loading configs:", err)
+		loggerName := "loadConfigs"
+		logger.GetLogger(&loggerName).Error("Error loading configs:", err)
 		return config
 	}
 	for _, c := range loadedConfigs {

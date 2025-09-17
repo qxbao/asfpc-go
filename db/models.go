@@ -74,6 +74,15 @@ type Image struct {
 	BelongToID int32
 }
 
+type Log struct {
+	ID          int32
+	AccountID   sql.NullInt32
+	Action      string
+	TargetID    sql.NullInt32
+	Description sql.NullString
+	CreatedAt   sql.NullTime
+}
+
 type Post struct {
 	ID         int32
 	PostID     string

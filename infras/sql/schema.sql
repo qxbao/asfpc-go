@@ -175,3 +175,18 @@ CREATE TABLE IF NOT EXISTS public.config
     value character varying COLLATE pg_catalog."default" NOT NULL,
     CONSTRAINT config_pkey PRIMARY KEY (id)
 );
+
+CREATE TABLE IF NOT EXISTS public.log
+(
+    id integer NOT NULL DEFAULT nextval('log_id_seq'::regclass),
+    account_id integer,
+    action character varying COLLATE pg_catalog."default" NOT NULL,
+    target_id integer,
+    description text COLLATE pg_catalog."default",
+    created_at timestamp without time zone DEFAULT now(),
+    CONSTRAINT log_pkey PRIMARY KEY (id),
+    CONSTRAINT log_account_id_fkey FOREIGN KEY (account_id)
+        REFERENCES public.account (id) MATCH SIMPLE
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+);
