@@ -1029,3 +1029,38 @@ func (q *Queries) UpdateProfileAfterScan(ctx context.Context, arg UpdateProfileA
 	)
 	return i, err
 }
+
+const updateProfileScanStatus = `-- name: UpdateProfileScanStatus :one
+UPDATE public.user_profile
+SET updated_at = NOW(),
+    is_scanned = TRUE
+WHERE id = $1
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
+`
+
+func (q *Queries) UpdateProfileScanStatus(ctx context.Context, id int32) (UserProfile, error) {
+	row := q.db.QueryRowContext(ctx, updateProfileScanStatus, id)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.FacebookID,
+		&i.Name,
+		&i.Bio,
+		&i.Location,
+		&i.Work,
+		&i.Education,
+		&i.RelationshipStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScrapedByID,
+		&i.IsScanned,
+		&i.Hometown,
+		&i.Locale,
+		&i.Gender,
+		&i.Birthday,
+		&i.Email,
+		&i.Phone,
+		&i.ProfileUrl,
+	)
+	return i, err
+}

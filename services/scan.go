@@ -284,6 +284,7 @@ func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesT
 	fetchedProfile, err := fg.GetUserDetails(profile.FacebookID, &map[string]string{})
 
 	if err != nil {
+		s.Server.Queries.UpdateProfileScanStatus(ctx, profile.ID)
 		return fmt.Errorf("failed to fetch user profile: %s", err.Error())
 	}
 

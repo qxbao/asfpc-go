@@ -2,9 +2,10 @@ package services
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"os"
+	"runtime"
 )
 
 var ex, _ = os.Executable()
@@ -16,7 +17,14 @@ type PythonService struct {
 }
 
 func (ps PythonService) RunScript(args ...string) (string, error) {
-	pythonExe := filepath.Join("venv", "Scripts", "python.exe")
+	var pythonExe string
+
+	if runtime.GOOS == "windows" {
+		pythonExe = filepath.Join("venv", "Scripts", "python.exe")
+	} else {
+		pythonExe = filepath.Join("venv", "bin", "python")
+	}
+
 	cmdArgs := append([]string{"main.py"}, args...)
 
 	cmd := exec.Command(pythonExe, cmdArgs...)

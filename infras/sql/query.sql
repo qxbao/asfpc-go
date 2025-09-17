@@ -126,6 +126,13 @@ JOIN public.account a ON up.scraped_by_id = a.id
 WHERE up.is_scanned = false AND a.is_block = false AND a.access_token IS NOT NULL
 ORDER BY up.updated_at ASC LIMIT $1;
 
+-- name: UpdateProfileScanStatus :one
+UPDATE public.user_profile
+SET updated_at = NOW(),
+    is_scanned = TRUE
+WHERE id = $1
+RETURNING *;
+
 -- name: UpdateProfileAfterScan :one
 UPDATE public.user_profile
 SET updated_at = NOW(),
