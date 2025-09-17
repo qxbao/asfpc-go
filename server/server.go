@@ -46,7 +46,6 @@ func (s *Server) start() {
 
 	e := echo.New()
 	e.Use(middleware.CORS())
-	e.Use(middleware.Logger())
   e.Use(middleware.Recover())
 
 	s.Echo = e
