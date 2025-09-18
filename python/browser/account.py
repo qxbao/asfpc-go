@@ -25,7 +25,7 @@ class AccountAutomationService:
         user_data_dir=account.get_user_data_dir()
       ).get_browser()
       await browser.cookies.set_all(
-        BrowserAutomationService.cookie_param_converter(account.cookies)
+        account.cookies
       )
       return await FacebookAutomationService.join_group(group, browser)
     except Exception as e:

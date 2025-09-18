@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS public.user_profile
     birthday character varying(10) COLLATE pg_catalog."default",
     email character varying(100) COLLATE pg_catalog."default",
     phone character varying(12) COLLATE pg_catalog."default",
-    profile_url character varying COLLATE pg_catalog."default" NOT NULL DEFAULT 'NOT SPECIFIED'::character varying,
+    profile_url character varying COLLATE pg_catalog."default" NOT NULL DEFAULT 'NOT_SPECIFIED'::character varying,
     CONSTRAINT user_profile_pkey PRIMARY KEY (id),
     CONSTRAINT user_profile_facebook_id_key UNIQUE (facebook_id),
     CONSTRAINT user_profile_scraped_by_id_fkey FOREIGN KEY (scraped_by_id)

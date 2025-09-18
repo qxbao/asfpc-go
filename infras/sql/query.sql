@@ -74,14 +74,14 @@ WHERE id = $1;
 
 -- name: CreatePost :one
 INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
-VALUES ($1, $2, $3, NOW(), $4, false)
+VALUES ($1, $2, $3, NOW(), $4, true)
 RETURNING *;
 
 -- name: GetPostsToScan :many
 SELECT p.*, a.access_token FROM public.post p
 JOIN "group" g ON p.group_id = g.id
 JOIN account a ON g.account_id = a.id
-WHERE is_analyzed=false AND g.account_id = $1
+WHERE g.account_id = $1
 ORDER BY inserted_at ASC LIMIT $2;
 
 -- name: GetPostById :one
@@ -154,6 +154,14 @@ RETURNING *;
 
 -- name: GetAllConfigs :many
 SELECT * FROM public.config;
+
+-- name: GetStats :one
+SELECT
+  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public."group") AS total_groups,
+  (SELECT COUNT(*) FROM public.comment) AS total_comments,
+  (SELECT COUNT(*) FROM public.post) AS total_posts;
 
 -- name: LogAction :exec
 INSERT INTO public.log (account_id, "action", target_id, description, created_at)

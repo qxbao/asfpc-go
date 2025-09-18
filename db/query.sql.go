@@ -124,7 +124,7 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 
 const createPost = `-- name: CreatePost :one
 INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
-VALUES ($1, $2, $3, NOW(), $4, false)
+VALUES ($1, $2, $3, NOW(), $4, true)
 RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed
 `
 
@@ -625,7 +625,7 @@ const getPostsToScan = `-- name: GetPostsToScan :many
 SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.access_token FROM public.post p
 JOIN "group" g ON p.group_id = g.id
 JOIN account a ON g.account_id = a.id
-WHERE is_analyzed=false AND g.account_id = $1
+WHERE g.account_id = $1
 ORDER BY inserted_at ASC LIMIT $2
 `
 
@@ -846,6 +846,36 @@ func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProf
 		return nil, err
 	}
 	return items, nil
+}
+
+const getStats = `-- name: GetStats :one
+SELECT
+  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public."group") AS total_groups,
+  (SELECT COUNT(*) FROM public.comment) AS total_comments,
+  (SELECT COUNT(*) FROM public.post) AS total_posts
+`
+
+type GetStatsRow struct {
+	TotalProfiles   int64
+	ScannedProfiles int64
+	TotalGroups     int64
+	TotalComments   int64
+	TotalPosts      int64
+}
+
+func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getStats)
+	var i GetStatsRow
+	err := row.Scan(
+		&i.TotalProfiles,
+		&i.ScannedProfiles,
+		&i.TotalGroups,
+		&i.TotalComments,
+		&i.TotalPosts,
+	)
+	return i, err
 }
 
 const logAction = `-- name: LogAction :exec

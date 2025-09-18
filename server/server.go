@@ -96,6 +96,7 @@ func (s *Server) initDB() error {
 
 func (s Server) initRoute() error {
 	routes.InitAccountRoutes(s.Server)
+	routes.InitDataRoutes(s.Server)
 	return nil
 }
 
