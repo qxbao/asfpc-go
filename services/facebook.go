@@ -80,7 +80,9 @@ func (fg FacebookGraph) GenerateFBAccessToken(username string, password string) 
 		return nil, err
 	}
 
+	
 	if atResponse.AccessToken == nil {
+		fmt.Println(atResponse)
 		return nil, fmt.Errorf("(username = %s) Failed to get access token: Cannot find access_token in response", username)
 	}
 
