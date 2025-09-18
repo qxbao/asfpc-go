@@ -53,9 +53,45 @@ PYTHON_ENV_NAME=<your_python_venv_folder_name>
 ```
 
 3. Set up Python virtual environment and install dependencies
-You can use provided scripts (for Powershell):
+
+**Universal setup (any OS) - Recommended:**
+```bash
+# Compile and run the setup tool
+go run tools/setup-venv.go
+```
+
+**For Windows (PowerShell):**
 ```powershell
 ./venv.ps1
+```
+
+**For Windows (Command Prompt/Batch):**
+```cmd
+venv.bat
+```
+
+**For macOS/Linux (Bash):**
+```bash
+chmod +x venv.sh
+./venv.sh
+```
+
+**Manual setup (any OS):**
+```bash
+cd python
+python -m venv venv           # Windows
+# OR
+python3 -m venv venv          # macOS/Linux
+
+# Activate virtual environment:
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies:
+pip install -r requirements.txt
+cd ..
 ```
 
 ## Usage

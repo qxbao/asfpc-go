@@ -274,6 +274,10 @@ func (s ScanService) processComment(input processCommentInput) bool {
 	}
 	logger.Debugf("Processing comment %s from post %d", *input.Comment.ID, input.PostID)
 
+	if input.Comment.ID == nil || len(*input.Comment.ID) > 15 {
+		panic(fmt.Errorf("anonymous comment or invalid comment ID: %v", input.Comment.ID))
+	}
+	
 	profile, err := s.Server.Queries.CreateProfile(input.Context, db.CreateProfileParams{
 		FacebookID:  input.Comment.From.ID.String(),
 		Name:        utils.ToNullString(input.Comment.From.Name),
