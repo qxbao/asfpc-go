@@ -19,7 +19,7 @@ This project aims to create an automated system that can efficiently identify an
 - Go 1.23+
 - Python 3.12+
 - PostgreSQL
-- Docker (optional, for containerization)
+- Docker (optional, functions might be limited)
 
 ## Installation
 
@@ -86,6 +86,8 @@ To run the application in development mode (with hot-reload), use the provided `
 Note: This script is for Powershell and require `air` package to be installed.
 
 ## Docker
+*Docker is currently limited and some features may not work (e.g., UI's `login` and `join group` function).*
+
 To build and run the application using Docker, follow these steps:
 1. Build the Docker image
 ```bash
