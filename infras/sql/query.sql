@@ -50,6 +50,15 @@ INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
 VALUES ($1, $2, false, $3)
 RETURNING *;
 
+-- name: DeleteGroup :exec
+WITH deleted_posts AS (
+  DELETE FROM public.post WHERE group_id = $1 RETURNING post.id
+),
+deleted_comments AS (
+  DELETE FROM public.comment WHERE post_id IN (SELECT id FROM deleted_posts)
+)
+DELETE FROM public."group" WHERE "group".id = $1;
+
 -- name: GetGroupById :one
 SELECT * FROM public."group" WHERE id = $1;
 

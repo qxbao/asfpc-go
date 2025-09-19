@@ -246,6 +246,21 @@ func (q *Queries) DeleteAccounts(ctx context.Context, dollar_1 []int32) error {
 	return err
 }
 
+const deleteGroup = `-- name: DeleteGroup :exec
+WITH deleted_posts AS (
+  DELETE FROM public.post WHERE group_id = $1 RETURNING post.id
+),
+deleted_comments AS (
+  DELETE FROM public.comment WHERE post_id IN (SELECT id FROM deleted_posts)
+)
+DELETE FROM public."group" WHERE "group".id = $1
+`
+
+func (q *Queries) DeleteGroup(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, deleteGroup, id)
+	return err
+}
+
 const getAccountById = `-- name: GetAccountById :one
 SELECT id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id FROM public.account WHERE id = $1
 `

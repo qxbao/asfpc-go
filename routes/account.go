@@ -21,4 +21,5 @@ func InitAccountRoutes(s infras.Server) {
 	e.POST("/account/group/join", services.JoinGroup)
 	e.POST("/account/group/add", services.CreateGroup)
 	e.DELETE("/account/delete", services.DeleteAccounts)
+	e.DELETE("/account/group/delete", services.DeleteGroup)
 }

@@ -347,3 +347,26 @@ func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
 		"data": groups,
 	})
 }
+
+func (s *AccountService) DeleteGroup(c echo.Context) error {
+	dto := new(infras.DeleteGroupDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.String(http.StatusBadRequest, "Invalid request body")
+	}
+
+	if dto.GroupID == 0 {
+		return c.String(http.StatusBadRequest, "GroupID is required")
+	}
+
+	err := s.Server.Queries.DeleteGroup(c.Request().Context(), dto.GroupID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "Failed to delete group: " + err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"message":  "Group deleted successfully",
+		"data": dto.GroupID,
+	})
+}

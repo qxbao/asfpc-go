@@ -9,3 +9,7 @@ type CreateGroupDTO struct {
 type GetGroupsByAccountIDDTO struct {
 	AccountID int32 `query:"account_id"`
 }
+
+type DeleteGroupDTO struct {
+	GroupID int32 `json:"group_id"`
+}
