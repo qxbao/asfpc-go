@@ -94,7 +94,7 @@ func (s *AccountService) GetAccount(c echo.Context) error {
 
 func (s *AccountService) GetAccounts(c echo.Context) error {
 	queries := s.Server.Queries
-	dto := new(infras.GetAccountsDTO)
+	dto := new(infras.QueryWithPageDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid request body")
 	}
@@ -118,6 +118,10 @@ func (s *AccountService) GetAccounts(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]any{
 			"error": "Failed to retrieve accounts: " + err.Error(),
 		})
+	}
+
+	if accounts == nil {
+		accounts = make([]db.GetAccountsRow, 0)
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -333,6 +337,10 @@ func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]any{
 			"error": "Failed to retrieve groups: " + err.Error(),
 		})
+	}
+
+	if groups == nil {
+		groups = make([]db.Group, 0)
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{

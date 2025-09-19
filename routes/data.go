@@ -10,4 +10,6 @@ func InitDataRoutes(s infras.Server) {
 	services := services.DataService{Server: s}
 
 	e.GET("/data/stats", services.GetDataStats)
+	e.GET("/data/prompt/list", services.GetAllPrompts)
+	e.POST("/data/prompt/add", services.CreatePrompt)
 }

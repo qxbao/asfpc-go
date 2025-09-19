@@ -7,7 +7,7 @@ type CreateAccountDTO struct {
 	IsBlock  *bool   `json:"is_block"`
 }
 
-type GetAccountsDTO struct {
+type QueryWithPageDTO struct {
 	Page  *int32 `query:"page"`
 	Limit *int32 `query:"limit"`
 }

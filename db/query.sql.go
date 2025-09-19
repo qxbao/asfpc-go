@@ -13,6 +13,17 @@ import (
 	"github.com/lib/pq"
 )
 
+const countPrompts = `-- name: CountPrompts :one
+SELECT COUNT(DISTINCT service_name) as total_prompt FROM public.prompt
+`
+
+func (q *Queries) CountPrompts(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPrompts)
+	var total_prompt int64
+	err := row.Scan(&total_prompt)
+	return total_prompt, err
+}
+
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO public.account (email, username, password, is_block, ua, created_at, updated_at, access_token, proxy_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -194,6 +205,38 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (U
 	return i, err
 }
 
+const createPrompt = `-- name: CreatePrompt :one
+WITH next_version AS (
+  SELECT COALESCE(MAX(version), 0) + 1 AS version
+  FROM public.prompt
+  WHERE service_name = $1
+)
+INSERT INTO public.prompt (service_name, version, content, created_by, created_at)
+SELECT $1, next_version.version, $2, $3, NOW()
+FROM next_version
+RETURNING id, content, service_name, version, created_by, created_at
+`
+
+type CreatePromptParams struct {
+	ServiceName string
+	Content     string
+	CreatedBy   string
+}
+
+func (q *Queries) CreatePrompt(ctx context.Context, arg CreatePromptParams) (Prompt, error) {
+	row := q.db.QueryRowContext(ctx, createPrompt, arg.ServiceName, arg.Content, arg.CreatedBy)
+	var i Prompt
+	err := row.Scan(
+		&i.ID,
+		&i.Content,
+		&i.ServiceName,
+		&i.Version,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteAccounts = `-- name: DeleteAccounts :exec
 DELETE FROM public.account WHERE id = ANY($1::int[])
 `
@@ -313,6 +356,63 @@ func (q *Queries) GetAllConfigs(ctx context.Context) ([]Config, error) {
 	for rows.Next() {
 		var i Config
 		if err := rows.Scan(&i.ID, &i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllPrompts = `-- name: GetAllPrompts :many
+SELECT id, content, service_name, version, created_by, created_at, rn
+FROM (
+  SELECT id, content, service_name, version, created_by, created_at, ROW_NUMBER() OVER (PARTITION BY service_name ORDER BY version DESC) AS rn
+  FROM public.prompt
+) t
+WHERE rn = 1
+ORDER BY service_name
+LIMIT $1 OFFSET $2
+`
+
+type GetAllPromptsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+type GetAllPromptsRow struct {
+	ID          int32
+	Content     string
+	ServiceName string
+	Version     int32
+	CreatedBy   string
+	CreatedAt   time.Time
+	Rn          int64
+}
+
+func (q *Queries) GetAllPrompts(ctx context.Context, arg GetAllPromptsParams) ([]GetAllPromptsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllPrompts, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllPromptsRow
+	for rows.Next() {
+		var i GetAllPromptsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Content,
+			&i.ServiceName,
+			&i.Version,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.Rn,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -846,6 +946,26 @@ func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProf
 		return nil, err
 	}
 	return items, nil
+}
+
+const getPrompt = `-- name: GetPrompt :one
+SELECT id, content, service_name, version, created_by, created_at FROM public.prompt
+WHERE service_name = $1
+ORDER BY version DESC LIMIT 1
+`
+
+func (q *Queries) GetPrompt(ctx context.Context, serviceName string) (Prompt, error) {
+	row := q.db.QueryRowContext(ctx, getPrompt, serviceName)
+	var i Prompt
+	err := row.Scan(
+		&i.ID,
+		&i.Content,
+		&i.ServiceName,
+		&i.Version,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getStats = `-- name: GetStats :one

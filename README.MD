@@ -115,11 +115,28 @@ get-content .env | foreach {
 ```
 
 ## Development
-To run the application in development mode (with hot-reload), use the provided `dev` script.
+To run the application in development mode (with hot-reload), use the provided platform-specific `dev` scripts:
+
+**Windows (PowerShell):**
 ```powershell
 ./dev.ps1
 ```
-Note: This script is for Powershell and require `air` package to be installed.
+
+**Linux:**
+```bash
+chmod +x dev.sh  # First time only
+./dev.sh
+```
+
+**macOS:**
+```bash
+chmod +x dev-mac.sh  # First time only
+./dev-mac.sh
+```
+
+Note: These scripts require the `air` package to be installed: `go install github.com/air-verse/air@latest`
+
+For more details about the development scripts, see [DEV_SCRIPTS.md](DEV_SCRIPTS.md).
 
 ## Docker
 *Docker is currently limited and some features may not work (e.g., UI's `login` and `join group` function).*

@@ -152,6 +152,35 @@ SET updated_at = NOW(),
 WHERE id = $1
 RETURNING *;
 
+-- name: GetPrompt :one
+SELECT * FROM public.prompt
+WHERE service_name = $1
+ORDER BY version DESC LIMIT 1;
+
+-- name: GetAllPrompts :many
+SELECT *
+FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY service_name ORDER BY version DESC) AS rn
+  FROM public.prompt
+) t
+WHERE rn = 1
+ORDER BY service_name
+LIMIT $1 OFFSET $2;
+
+-- name: CountPrompts :one
+SELECT COUNT(DISTINCT service_name) as total_prompt FROM public.prompt;
+
+-- name: CreatePrompt :one
+WITH next_version AS (
+  SELECT COALESCE(MAX(version), 0) + 1 AS version
+  FROM public.prompt
+  WHERE service_name = $1
+)
+INSERT INTO public.prompt (service_name, version, content, created_by, created_at)
+SELECT $1, next_version.version, $2, $3, NOW()
+FROM next_version
+RETURNING *;
+
 -- name: GetAllConfigs :many
 SELECT * FROM public.config;
 
