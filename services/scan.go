@@ -264,7 +264,7 @@ func (s ScanService) processPost(input processPostInput) bool {
 				PostID:    p.ID,
 			})
 		}
-		succs, errs := semaphore.Run()
+		_, errs := semaphore.Run()
 		for _, err := range errs {
 			if err != nil {
 				logger.Errorf("Failed to process comment for post %s: %v", *input.Post.ID, err)
