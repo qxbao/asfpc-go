@@ -5,6 +5,7 @@
 # Or use `go install github.com/air-verse/air@latest` to install it <3
 
 set -e  # Exit on any error
+export PATH=$PATH:$(go env GOPATH)/bin
 
 # Check if .env file exists
 if [ ! -f .env ]; then
