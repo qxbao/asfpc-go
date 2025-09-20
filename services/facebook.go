@@ -64,7 +64,6 @@ func (fg FacebookGraph) GenerateFBAccessToken(username string, password string) 
 		values.Set(key, value)
 	}
 	url := fmt.Sprintf("%s?%s", BaseURL, values.Encode())
-	fmt.Println("Requesting FB access token: " + url)
 	c := resty.New()
 	defer c.Close()
 

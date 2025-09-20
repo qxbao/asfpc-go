@@ -264,6 +264,18 @@ func (s ScanService) processPost(input processPostInput) bool {
 				PostID:    p.ID,
 			})
 		}
+		succs, errs := semaphore.Run()
+		for _, err := range errs {
+			if err != nil {
+				logger.Errorf("Failed to process comment for post %s: %v", *input.Post.ID, err)
+				s.Server.Queries.LogAction(input.Context, db.LogActionParams{
+					AccountID:   sql.NullInt32{Int32: input.ScraperId, Valid: true},
+					Action:      "scan_comment",
+					TargetID:    sql.NullInt32{Int32: p.ID, Valid: true},
+					Description: sql.NullString{String: fmt.Sprintf("Failed to process comment for post %s: %v", *input.Post.ID, err), Valid: true},
+				})
+			}
+		}
 	}
 	return true
 }
