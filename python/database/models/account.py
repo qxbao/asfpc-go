@@ -33,11 +33,11 @@ class CookieType(TypeDecorator):
   def process_bind_param( # noqa: PLR6301
     self,
     value: List[Cookie] | None,
-    _: Dialect
+    dialect: Dialect
   ) -> list[dict] | None:
     return [cookie.to_json() for cookie in value] if value else None
 
-  def process_result_value(self, value: dict | None, _: Dialect) -> List[Cookie] | None:  # noqa: PLR6301
+  def process_result_value(self, value: dict | None, dialect: Dialect) -> List[Cookie] | None:  # noqa: PLR6301
     return [Cookie.from_json(cookie) for cookie in value] if value else None
 
 

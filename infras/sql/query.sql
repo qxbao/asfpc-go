@@ -15,7 +15,8 @@ SELECT
 -- name: GetAccounts :many
 SELECT a.id, a.username, a.email, a.updated_at, a.access_token, (
 	SELECT COUNT(*) FROM public."group" g WHERE g.account_id = a.id
-) as group_count, COOKIES IS NOT NULL as is_login
+) as group_count, COOKIES IS NOT NULL as is_login,
+a.is_block
 FROM public.account a LIMIT $1 OFFSET $2;
 
 -- name: GetOKAccountIds :many
