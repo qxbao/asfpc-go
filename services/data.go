@@ -18,7 +18,7 @@ func (ds *DataService) GetDataStats(c echo.Context) error {
 
 	if err != nil {
 		return c.JSON(500, map[string]any{
-			"error":   "failed to get data stats: " + err.Error(),
+			"error": "failed to get data stats: " + err.Error(),
 		})
 	}
 
@@ -31,7 +31,9 @@ func (ds *DataService) GetAllPrompts(c echo.Context) error {
 	queries := ds.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	if dto.Page == nil {
@@ -43,15 +45,15 @@ func (ds *DataService) GetAllPrompts(c echo.Context) error {
 		dto.Limit = new(int32)
 		*dto.Limit = 10
 	}
-	
+
 	prompts, err := queries.GetAllPrompts(c.Request().Context(), db.GetAllPromptsParams{
 		Limit:  *dto.Limit,
 		Offset: *dto.Page * *dto.Limit,
 	})
-	
+
 	if err != nil {
 		return c.JSON(500, map[string]any{
-			"error":   "failed to get prompts: " + err.Error(),
+			"error": "failed to get prompts: " + err.Error(),
 		})
 	}
 
@@ -59,37 +61,39 @@ func (ds *DataService) GetAllPrompts(c echo.Context) error {
 		prompts = make([]db.GetAllPromptsRow, 0)
 	}
 
-	count , err := queries.CountPrompts(c.Request().Context())
+	count, err := queries.CountPrompts(c.Request().Context())
 
 	if err != nil {
 		return c.JSON(500, map[string]any{
-			"error":   "failed to count prompts: " + err.Error(),
+			"error": "failed to count prompts: " + err.Error(),
 		})
 	}
 
 	return c.JSON(200, map[string]any{
-		"data": prompts,
+		"data":  prompts,
 		"total": count,
 	})
 }
 
 func (ds *DataService) CreatePrompt(c echo.Context) error {
 	queries := ds.Server.Queries
-	
+
 	dto := new(infras.CreatePromptRequest)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	prompt, err := queries.CreatePrompt(c.Request().Context(), db.CreatePromptParams{
-		ServiceName:     dto.ServiceName,
-		Content:   dto.Content,
-		CreatedBy: dto.CreatedBy,
+		ServiceName: dto.ServiceName,
+		Content:     dto.Content,
+		CreatedBy:   dto.CreatedBy,
 	})
 
 	if err != nil {
 		return c.JSON(500, map[string]any{
-			"error":   "failed to create prompt: " + err.Error(),
+			"error": "failed to create prompt: " + err.Error(),
 		})
 	}
 

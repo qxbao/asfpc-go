@@ -37,10 +37,14 @@ func (s *AccountService) AddAccount(c echo.Context) error {
 	dto := new(infras.CreateAccountDTO)
 
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 	if dto.Username == nil || dto.Password == nil {
-		return c.String(http.StatusBadRequest, "Username and password are required")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Username and password are required",
+		})
 	}
 
 	ua := GenerateModernChromeUA()
@@ -77,7 +81,9 @@ func (s *AccountService) GetAccount(c echo.Context) error {
 	dto := new(infras.GetAccountDTO)
 
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	account, err := queries.GetAccountById(c.Request().Context(), dto.ID)
@@ -96,7 +102,9 @@ func (s *AccountService) GetAccounts(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	if dto.Page == nil {
@@ -133,10 +141,14 @@ func (s *AccountService) DeleteAccounts(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.DeleteAccountsDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 	if len(dto.IDs) == 0 {
-		return c.String(http.StatusBadRequest, "No account IDs provided")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "No account IDs provided",
+		})
 	}
 	err := queries.DeleteAccounts(c.Request().Context(), dto.IDs)
 	if err != nil {
@@ -179,11 +191,15 @@ func (s *AccountService) UpdateAccountCredentials(c echo.Context) error {
 func (s *AccountService) GenAccountsAT(c echo.Context) error {
 	dto := new(infras.GenAccountsATDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 	queries := s.Server.Queries
 	if len(dto.IDs) == 0 {
-		return c.String(http.StatusBadRequest, "No account IDs provided")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "No account IDs provided",
+		})
 	}
 
 	var wg sync.WaitGroup
@@ -251,7 +267,9 @@ func (s *AccountService) GenAccountsAT(c echo.Context) error {
 func (s *AccountService) LoginAccount(c echo.Context) error {
 	dto := new(infras.LoginAccountDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 	pythonService := PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
@@ -270,7 +288,9 @@ func (s *AccountService) LoginAccount(c echo.Context) error {
 func (s *AccountService) JoinGroup(c echo.Context) error {
 	dto := new(infras.JoinGroupDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 	pythonService := PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
@@ -291,11 +311,15 @@ func (s *AccountService) CreateGroup(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.CreateGroupDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	if dto.GroupId == nil || dto.GroupName == nil || dto.AccountId == nil {
-		return c.String(http.StatusBadRequest, "GroupID, GroupName and AccountID are required")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "GroupID, GroupName and AccountID are required",
+		})
 	}
 
 	params := db.CreateGroupParams{
@@ -321,11 +345,15 @@ func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.GetGroupsByAccountIDDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	if dto.AccountID == 0 {
-		return c.String(http.StatusBadRequest, "AccountID is required")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "AccountID is required",
+		})
 	}
 
 	groups, err := queries.GetGroupsByAccountId(c.Request().Context(), sql.NullInt32{
@@ -351,11 +379,15 @@ func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
 func (s *AccountService) DeleteGroup(c echo.Context) error {
 	dto := new(infras.DeleteGroupDTO)
 	if err := c.Bind(dto); err != nil {
-		return c.String(http.StatusBadRequest, "Invalid request body")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
 	}
 
 	if dto.GroupID == 0 {
-		return c.String(http.StatusBadRequest, "GroupID is required")
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "GroupID is required",
+		})
 	}
 
 	err := s.Server.Queries.DeleteGroup(c.Request().Context(), dto.GroupID)
