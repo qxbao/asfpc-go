@@ -136,12 +136,45 @@ JOIN public.account a ON up.scraped_by_id = a.id
 WHERE up.is_scanned = false AND a.is_block = false AND a.access_token IS NOT NULL
 ORDER BY up.updated_at ASC LIMIT $1;
 
+-- name: GetProfilesAnalysisPage :many
+SELECT 
+  up.id,
+  up.facebook_id,
+  up.name,
+  up.is_analyzed,
+  (COALESCE(up.bio, '') != '')::int +
+  (COALESCE(up.location, '') != '')::int +
+  (COALESCE(up.work, '') != '')::int +
+  (COALESCE(up.locale, '') != '')::int +
+  (COALESCE(up.education, '') != '')::int +
+  (COALESCE(up.relationship_status, '') != '')::int +
+  (COALESCE(up.hometown, '') != '')::int +
+  (COALESCE(up.gender, '') != '')::int +
+  (COALESCE(up.birthday, '') != '')::int +
+  (COALESCE(up.email, '') != '')::int +
+  (COALESCE(up.phone, '') != '')::int AS non_null_count
+FROM public.user_profile up
+WHERE up.is_scanned = true
+ORDER BY non_null_count DESC, up.updated_at ASC
+LIMIT $1 OFFSET $2;
+
+-- name: CountProfiles :one
+SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true;
+
 -- name: UpdateProfileScanStatus :one
 UPDATE public.user_profile
 SET updated_at = NOW(),
     is_scanned = TRUE
 WHERE id = $1
 RETURNING *;
+
+-- name: UpdateGeminiAnalysisProfile :one
+UPDATE public.user_profile
+SET gemini_score = $2,
+    is_analyzed = TRUE,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING gemini_score;
 
 -- name: UpdateProfileAfterScan :one
 UPDATE public.user_profile
@@ -205,3 +238,28 @@ SELECT
 -- name: LogAction :exec
 INSERT INTO public.log (account_id, "action", target_id, description, created_at)
 VALUES ($1, $2, $3, $4, NOW());
+
+-- name: GetLogs :many
+SELECT l.*, a.username FROM public.log l
+LEFT JOIN public.account a ON l.account_id = a.id
+ORDER BY l.created_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: CountLogs :one
+SELECT COUNT(*) as total_logs FROM public.log;
+
+-- name: GetGeminiKeys :many
+SELECT * FROM public.gemini_key;
+
+-- name: GetGeminiKeyForUse :one
+SELECT * FROM public.gemini_key WHERE token_used = (
+  SELECT MIN(token_used) FROM public.gemini_key
+) LIMIT 1;
+
+-- name: CountGeminiKeys :one
+SELECT COUNT(*) as total_gemini_keys FROM public.gemini_key;
+
+-- name: CreateGeminiKey :one
+INSERT INTO public.gemini_key (api_key)
+VALUES ($1)
+RETURNING *;

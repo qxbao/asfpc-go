@@ -58,6 +58,12 @@ type FinancialAnalysis struct {
 	UserProfileID        int32
 }
 
+type GeminiKey struct {
+	ID        int32
+	ApiKey    string
+	TokenUsed int64
+}
+
 type Group struct {
 	ID        int32
 	GroupID   string
@@ -125,6 +131,8 @@ type UserProfile struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ScrapedByID        int32
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
 	IsScanned          bool
 	Hometown           sql.NullString
 	Locale             string

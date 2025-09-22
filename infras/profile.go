@@ -33,3 +33,7 @@ type Education struct {
 	Id            *string         `json:"id,omitempty"`
 	Concentration *[]EntityNameID `json:"concentration,omitempty"`
 }
+
+type AnalyzeProfileRequest struct {
+	ProfileID int32  `json:"id" binding:"required"`
+}

@@ -54,12 +54,6 @@ PYTHON_ENV_NAME=<your_python_venv_folder_name>
 
 3. Set up Python virtual environment and install dependencies
 
-**Universal setup (any OS) - Recommended:**
-```bash
-# Compile and run the setup tool
-go run tools/setup-venv.go
-```
-
 **For Windows (PowerShell):**
 ```powershell
 ./venv.ps1

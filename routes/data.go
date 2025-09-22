@@ -11,5 +11,6 @@ func InitDataRoutes(s infras.Server) {
 
 	e.GET("/data/stats", services.GetDataStats)
 	e.GET("/data/prompt/list", services.GetAllPrompts)
+	e.GET("/data/log/list", services.GetLogs)
 	e.POST("/data/prompt/add", services.CreatePrompt)
 }

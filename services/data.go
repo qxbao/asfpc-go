@@ -101,3 +101,43 @@ func (ds *DataService) CreatePrompt(c echo.Context) error {
 		"data": prompt,
 	})
 }
+
+func (ds *DataService) GetLogs(c echo.Context) error {
+	queries := ds.Server.Queries
+	dto := new(infras.QueryWithPageDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+	if dto.Page == nil {
+		dto.Page = new(int32)
+		*dto.Page = 0
+	}
+	if dto.Limit == nil {
+		dto.Limit = new(int32)
+		*dto.Limit = 10
+	}
+	logs, err := queries.GetLogs(c.Request().Context(), db.GetLogsParams{
+		Limit:  *dto.Limit,
+		Offset: *dto.Page * *dto.Limit,
+	})
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to get logs: " + err.Error(),
+		})
+	}
+	if logs == nil {
+		logs = make([]db.GetLogsRow, 0)
+	}
+	count, err := queries.CountLogs(c.Request().Context())
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to count logs: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data":  logs,
+		"total": count,
+	})
+}

@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS public.user_profile
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     scraped_by_id integer NOT NULL,
+    is_analyzed boolean DEFAULT false,
+    gemini_score double precision,
     is_scanned boolean NOT NULL DEFAULT false,
     hometown character varying COLLATE pg_catalog."default",
     locale character varying(16) COLLATE pg_catalog."default" NOT NULL DEFAULT 'NOT_SPECIFIED'::character varying,
@@ -190,3 +192,11 @@ CREATE TABLE IF NOT EXISTS public.log
         ON UPDATE CASCADE
         ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS public.gemini_key
+(
+    id SERIAL,
+    api_key text COLLATE pg_catalog."default" NOT NULL,
+    token_used bigint NOT NULL DEFAULT 0,
+    CONSTRAINT gemini_key_pkey PRIMARY KEY (id)
+)

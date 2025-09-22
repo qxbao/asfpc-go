@@ -13,6 +13,39 @@ import (
 	"github.com/lib/pq"
 )
 
+const countGeminiKeys = `-- name: CountGeminiKeys :one
+SELECT COUNT(*) as total_gemini_keys FROM public.gemini_key
+`
+
+func (q *Queries) CountGeminiKeys(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countGeminiKeys)
+	var total_gemini_keys int64
+	err := row.Scan(&total_gemini_keys)
+	return total_gemini_keys, err
+}
+
+const countLogs = `-- name: CountLogs :one
+SELECT COUNT(*) as total_logs FROM public.log
+`
+
+func (q *Queries) CountLogs(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLogs)
+	var total_logs int64
+	err := row.Scan(&total_logs)
+	return total_logs, err
+}
+
+const countProfiles = `-- name: CountProfiles :one
+SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true
+`
+
+func (q *Queries) CountProfiles(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProfiles)
+	var total_profiles int64
+	err := row.Scan(&total_profiles)
+	return total_profiles, err
+}
+
 const countPrompts = `-- name: CountPrompts :one
 SELECT COUNT(DISTINCT service_name) as total_prompt FROM public.prompt
 `
@@ -107,6 +140,19 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 	return i, err
 }
 
+const createGeminiKey = `-- name: CreateGeminiKey :one
+INSERT INTO public.gemini_key (api_key)
+VALUES ($1)
+RETURNING id, api_key, token_used
+`
+
+func (q *Queries) CreateGeminiKey(ctx context.Context, apiKey string) (GeminiKey, error) {
+	row := q.db.QueryRowContext(ctx, createGeminiKey, apiKey)
+	var i GeminiKey
+	err := row.Scan(&i.ID, &i.ApiKey, &i.TokenUsed)
+	return i, err
+}
+
 const createGroup = `-- name: CreateGroup :one
 INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
 VALUES ($1, $2, false, $3)
@@ -169,7 +215,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 const createProfile = `-- name: CreateProfile :one
 INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, updated_at)
 VALUES ($1, $2, $3, NOW(), NOW())
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
 `
 
 type CreateProfileParams struct {
@@ -193,6 +239,8 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (U
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScrapedByID,
+		&i.IsAnalyzed,
+		&i.GeminiScore,
 		&i.IsScanned,
 		&i.Hometown,
 		&i.Locale,
@@ -503,6 +551,46 @@ func (q *Queries) GetCommentsToScan(ctx context.Context, arg GetCommentsToScanPa
 	return items, nil
 }
 
+const getGeminiKeyForUse = `-- name: GetGeminiKeyForUse :one
+SELECT id, api_key, token_used FROM public.gemini_key WHERE token_used = (
+  SELECT MIN(token_used) FROM public.gemini_key
+) LIMIT 1
+`
+
+func (q *Queries) GetGeminiKeyForUse(ctx context.Context) (GeminiKey, error) {
+	row := q.db.QueryRowContext(ctx, getGeminiKeyForUse)
+	var i GeminiKey
+	err := row.Scan(&i.ID, &i.ApiKey, &i.TokenUsed)
+	return i, err
+}
+
+const getGeminiKeys = `-- name: GetGeminiKeys :many
+SELECT id, api_key, token_used FROM public.gemini_key
+`
+
+func (q *Queries) GetGeminiKeys(ctx context.Context) ([]GeminiKey, error) {
+	rows, err := q.db.QueryContext(ctx, getGeminiKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GeminiKey
+	for rows.Next() {
+		var i GeminiKey
+		if err := rows.Scan(&i.ID, &i.ApiKey, &i.TokenUsed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getGroupById = `-- name: GetGroupById :one
 SELECT id, group_id, group_name, is_joined, account_id, scanned_at FROM public."group" WHERE id = $1
 `
@@ -631,6 +719,59 @@ func (q *Queries) GetGroupsToScan(ctx context.Context, arg GetGroupsToScanParams
 			&i.AccountID,
 			&i.ScannedAt,
 			&i.AccessToken,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLogs = `-- name: GetLogs :many
+SELECT l.id, l.account_id, l.action, l.target_id, l.description, l.created_at, a.username FROM public.log l
+LEFT JOIN public.account a ON l.account_id = a.id
+ORDER BY l.created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type GetLogsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+type GetLogsRow struct {
+	ID          int32
+	AccountID   sql.NullInt32
+	Action      string
+	TargetID    sql.NullInt32
+	Description sql.NullString
+	CreatedAt   sql.NullTime
+	Username    sql.NullString
+}
+
+func (q *Queries) GetLogs(ctx context.Context, arg GetLogsParams) ([]GetLogsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getLogs, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLogsRow
+	for rows.Next() {
+		var i GetLogsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Action,
+			&i.TargetID,
+			&i.Description,
+			&i.CreatedAt,
+			&i.Username,
 		); err != nil {
 			return nil, err
 		}
@@ -796,7 +937,7 @@ func (q *Queries) GetPostsToScan(ctx context.Context, arg GetPostsToScanParams) 
 }
 
 const getProfileById = `-- name: GetProfileById :one
-SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url FROM public.user_profile WHERE id = $1
+SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url FROM public.user_profile WHERE id = $1
 `
 
 func (q *Queries) GetProfileById(ctx context.Context, id int32) (UserProfile, error) {
@@ -814,6 +955,8 @@ func (q *Queries) GetProfileById(ctx context.Context, id int32) (UserProfile, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScrapedByID,
+		&i.IsAnalyzed,
+		&i.GeminiScore,
 		&i.IsScanned,
 		&i.Hometown,
 		&i.Locale,
@@ -827,7 +970,7 @@ func (q *Queries) GetProfileById(ctx context.Context, id int32) (UserProfile, er
 }
 
 const getProfileByIdWithAccount = `-- name: GetProfileByIdWithAccount :one
-SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.password, a.email, a.username, a.access_token FROM public.user_profile up
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_analyzed, up.gemini_score, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.password, a.email, a.username, a.access_token FROM public.user_profile up
 JOIN public.account a ON up.scraped_by_id = a.id
 WHERE up.id = $1
 `
@@ -844,6 +987,8 @@ type GetProfileByIdWithAccountRow struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ScrapedByID        int32
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
 	IsScanned          bool
 	Hometown           sql.NullString
 	Locale             string
@@ -873,6 +1018,8 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScrapedByID,
+		&i.IsAnalyzed,
+		&i.GeminiScore,
 		&i.IsScanned,
 		&i.Hometown,
 		&i.Locale,
@@ -889,8 +1036,73 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 	return i, err
 }
 
+const getProfilesAnalysisPage = `-- name: GetProfilesAnalysisPage :many
+SELECT 
+  up.id,
+  up.facebook_id,
+  up.name,
+  up.is_analyzed,
+  (COALESCE(up.bio, '') != '')::int +
+  (COALESCE(up.location, '') != '')::int +
+  (COALESCE(up.work, '') != '')::int +
+  (COALESCE(up.locale, '') != '')::int +
+  (COALESCE(up.education, '') != '')::int +
+  (COALESCE(up.relationship_status, '') != '')::int +
+  (COALESCE(up.hometown, '') != '')::int +
+  (COALESCE(up.gender, '') != '')::int +
+  (COALESCE(up.birthday, '') != '')::int +
+  (COALESCE(up.email, '') != '')::int +
+  (COALESCE(up.phone, '') != '')::int AS non_null_count
+FROM public.user_profile up
+WHERE up.is_scanned = true
+ORDER BY non_null_count DESC, up.updated_at ASC
+LIMIT $1 OFFSET $2
+`
+
+type GetProfilesAnalysisPageParams struct {
+	Limit  int32
+	Offset int32
+}
+
+type GetProfilesAnalysisPageRow struct {
+	ID           int32
+	FacebookID   string
+	Name         sql.NullString
+	IsAnalyzed   sql.NullBool
+	NonNullCount int32
+}
+
+func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAnalysisPageParams) ([]GetProfilesAnalysisPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisPage, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProfilesAnalysisPageRow
+	for rows.Next() {
+		var i GetProfilesAnalysisPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FacebookID,
+			&i.Name,
+			&i.IsAnalyzed,
+			&i.NonNullCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfilesToScan = `-- name: GetProfilesToScan :many
-SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.access_token, a.id as account_id
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_analyzed, up.gemini_score, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.access_token, a.id as account_id
 FROM public.user_profile up
 JOIN public.account a ON up.scraped_by_id = a.id
 WHERE up.is_scanned = false AND a.is_block = false AND a.access_token IS NOT NULL
@@ -909,6 +1121,8 @@ type GetProfilesToScanRow struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ScrapedByID        int32
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
 	IsScanned          bool
 	Hometown           sql.NullString
 	Locale             string
@@ -942,6 +1156,8 @@ func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProf
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ScrapedByID,
+			&i.IsAnalyzed,
+			&i.GeminiScore,
 			&i.IsScanned,
 			&i.Hometown,
 			&i.Locale,
@@ -1110,6 +1326,27 @@ func (q *Queries) UpdateAccountCredentials(ctx context.Context, arg UpdateAccoun
 	return i, err
 }
 
+const updateGeminiAnalysisProfile = `-- name: UpdateGeminiAnalysisProfile :one
+UPDATE public.user_profile
+SET gemini_score = $2,
+    is_analyzed = TRUE,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING gemini_score
+`
+
+type UpdateGeminiAnalysisProfileParams struct {
+	ID          int32
+	GeminiScore sql.NullFloat64
+}
+
+func (q *Queries) UpdateGeminiAnalysisProfile(ctx context.Context, arg UpdateGeminiAnalysisProfileParams) (sql.NullFloat64, error) {
+	row := q.db.QueryRowContext(ctx, updateGeminiAnalysisProfile, arg.ID, arg.GeminiScore)
+	var gemini_score sql.NullFloat64
+	err := row.Scan(&gemini_score)
+	return gemini_score, err
+}
+
 const updateGroupScannedAt = `-- name: UpdateGroupScannedAt :exec
 UPDATE public."group"
 SET scanned_at = NOW()
@@ -1138,7 +1375,7 @@ SET updated_at = NOW(),
     email = $12,
     phone = $13
 WHERE id = $1
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
 `
 
 type UpdateProfileAfterScanParams struct {
@@ -1186,6 +1423,8 @@ func (q *Queries) UpdateProfileAfterScan(ctx context.Context, arg UpdateProfileA
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScrapedByID,
+		&i.IsAnalyzed,
+		&i.GeminiScore,
 		&i.IsScanned,
 		&i.Hometown,
 		&i.Locale,
@@ -1203,7 +1442,7 @@ UPDATE public.user_profile
 SET updated_at = NOW(),
     is_scanned = TRUE
 WHERE id = $1
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
 `
 
 func (q *Queries) UpdateProfileScanStatus(ctx context.Context, id int32) (UserProfile, error) {
@@ -1221,6 +1460,8 @@ func (q *Queries) UpdateProfileScanStatus(ctx context.Context, id int32) (UserPr
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScrapedByID,
+		&i.IsAnalyzed,
+		&i.GeminiScore,
 		&i.IsScanned,
 		&i.Hometown,
 		&i.Locale,

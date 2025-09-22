@@ -32,6 +32,9 @@ class UserProfile(Base):
     gender: Mapped[Optional[str]] = mapped_column(VARCHAR(16), nullable=True)
     birthday: Mapped[Optional[str]] = mapped_column(VARCHAR(10), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(VARCHAR(100), nullable=True)
+    is_scanned: Mapped[bool] = mapped_column(nullable=False, default=False)
+    is_analyzed: Mapped[bool] = mapped_column(nullable=False, default=False)
+    gemini_score: Mapped[Optional[float]] = mapped_column(nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(VARCHAR(12), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
