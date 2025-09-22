@@ -307,6 +307,9 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 	}
 
 	succs, errs := semaphore.Run()
+
+	generativeService.SaveUsage(ctx, as.Server.Queries)
+
 	for i, err := range errs {
 		if err != nil {
 			as.Server.Queries.LogAction(ctx, db.LogActionParams{
