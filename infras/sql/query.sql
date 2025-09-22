@@ -158,6 +158,24 @@ WHERE up.is_scanned = true
 ORDER BY non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2;
 
+-- name: GetProfilesAnalysisCronjob :many
+SELECT *,
+  (COALESCE(up.bio, '') != '')::int +
+  (COALESCE(up.location, '') != '')::int +
+  (COALESCE(up.work, '') != '')::int +
+  (COALESCE(up.locale, '') != '')::int +
+  (COALESCE(up.education, '') != '')::int +
+  (COALESCE(up.relationship_status, '') != '')::int +
+  (COALESCE(up.hometown, '') != '')::int +
+  (COALESCE(up.gender, '') != '')::int +
+  (COALESCE(up.birthday, '') != '')::int +
+  (COALESCE(up.email, '') != '')::int +
+  (COALESCE(up.phone, '') != '')::int AS non_null_count
+FROM public.user_profile up
+WHERE up.is_scanned = true AND up.is_analyzed = false
+ORDER BY non_null_count DESC, up.updated_at ASC
+LIMIT $1 OFFSET $2;
+
 -- name: CountProfiles :one
 SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true;
 

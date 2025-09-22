@@ -1086,6 +1086,101 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 	return i, err
 }
 
+const getProfilesAnalysisCronjob = `-- name: GetProfilesAnalysisCronjob :many
+SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url,
+  (COALESCE(up.bio, '') != '')::int +
+  (COALESCE(up.location, '') != '')::int +
+  (COALESCE(up.work, '') != '')::int +
+  (COALESCE(up.locale, '') != '')::int +
+  (COALESCE(up.education, '') != '')::int +
+  (COALESCE(up.relationship_status, '') != '')::int +
+  (COALESCE(up.hometown, '') != '')::int +
+  (COALESCE(up.gender, '') != '')::int +
+  (COALESCE(up.birthday, '') != '')::int +
+  (COALESCE(up.email, '') != '')::int +
+  (COALESCE(up.phone, '') != '')::int AS non_null_count
+FROM public.user_profile up
+WHERE up.is_scanned = true AND up.is_analyzed = false
+ORDER BY non_null_count DESC, up.updated_at ASC
+LIMIT $1 OFFSET $2
+`
+
+type GetProfilesAnalysisCronjobParams struct {
+	Limit  int32
+	Offset int32
+}
+
+type GetProfilesAnalysisCronjobRow struct {
+	ID                 int32
+	FacebookID         string
+	Name               sql.NullString
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ScrapedByID        int32
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
+	IsScanned          bool
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+	ProfileUrl         string
+	NonNullCount       int32
+}
+
+func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, arg GetProfilesAnalysisCronjobParams) ([]GetProfilesAnalysisCronjobRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisCronjob, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProfilesAnalysisCronjobRow
+	for rows.Next() {
+		var i GetProfilesAnalysisCronjobRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FacebookID,
+			&i.Name,
+			&i.Bio,
+			&i.Location,
+			&i.Work,
+			&i.Education,
+			&i.RelationshipStatus,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ScrapedByID,
+			&i.IsAnalyzed,
+			&i.GeminiScore,
+			&i.IsScanned,
+			&i.Hometown,
+			&i.Locale,
+			&i.Gender,
+			&i.Birthday,
+			&i.Email,
+			&i.Phone,
+			&i.ProfileUrl,
+			&i.NonNullCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfilesAnalysisPage = `-- name: GetProfilesAnalysisPage :many
 SELECT 
   up.id,

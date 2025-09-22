@@ -12,6 +12,7 @@ func CollectTasks(s *infras.Server) []Task {
 	return []Task{
 		scanGroups(s),
 		scanProfiles(s),
+		geminiScoring(s),
 	}
 }
 
@@ -39,6 +40,20 @@ func scanProfiles(s *infras.Server) Task {
 				Server: *server,
 			}
 			scanService.ScanAllProfiles()
+		}, s),
+	}
+}
+
+func geminiScoring(s *infras.Server) Task {
+	return Task{
+		Def: gocron.DurationJob(
+			1 * time.Minute,
+		),
+		Fn: gocron.NewTask(func(server *infras.Server) {
+			analysisService := &services.AnalysisService{
+				Server: *server,
+			}
+			analysisService.GeminiScoringCronjob()
 		}, s),
 	}
 }
