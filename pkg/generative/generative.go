@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/qxbao/asfpc/db"
 	"google.golang.org/genai"
 )
 
@@ -40,6 +41,21 @@ func (gs *GenerativeService) GenerateText(prompt string) (string, error) {
 		return "", fmt.Errorf("failed to generate content: %v", err)
 	}
 
-	gs.Usage += int64(response.UsageMetadata.TotalTokenCount)
+	gs.Usage += int64(response.UsageMetadata.PromptTokenCount)
+	
 	return response.Text(), nil
+}
+
+func (gs *GenerativeService) SaveUsage(ctx context.Context, queries *db.Queries) error {
+	if gs.Usage > 0 {
+		_, err := queries.UpdateGeminiKeyUsage(ctx, db.UpdateGeminiKeyUsageParams{
+			ApiKey:    gs.APIKey,
+			TokenUsed: gs.Usage,
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	return nil
 }

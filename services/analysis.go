@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"fmt"
 	"strconv"
 
 	"github.com/labstack/echo/v4"
@@ -66,6 +67,7 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 	}
 
 	profile, err := as.Server.Queries.GetProfileById(c.Request().Context(), dto.ProfileID)
+
 	if err != nil {
 		return c.JSON(500, map[string]any{
 			"error": "failed to get profile: " + err.Error(),
@@ -80,7 +82,7 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 		})
 	}
 
-	generativeService := generative.GetGenerativeService(apiKey.ApiKey, "gemini-2.5-flash")
+	generativeService := generative.GetGenerativeService(apiKey.ApiKey, "gemini-2.5-flash-lite")
 
 	err = generativeService.Init()
 
@@ -99,6 +101,7 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 			"error": "failed to get prompt (gemini-preprocess-1): " + err.Error(),
 		})
 	}
+
 	businessDesc, err := promptService.GetPrompt(c.Request().Context(), "business-description")
 
 	if err != nil {
@@ -125,6 +128,26 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 
 	response, err := generativeService.GenerateText(promptContent)
 
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to generate text: " + err.Error(),
+		})
+	}
+
+	err = generativeService.SaveUsage(c.Request().Context(), as.Server.Queries)
+
+	if err != nil {
+		as.Server.Queries.LogAction(c.Request().Context(), db.LogActionParams{
+			Action: "profile_gemini_analysis",
+			Description: sql.NullString{
+				String: fmt.Sprintf("Failed to save usage: %v", err.Error()),
+				Valid:  true,
+			},
+			TargetID:  sql.NullInt32{Int32: profile.ID, Valid: true},
+			AccountID: sql.NullInt32{Int32: 0, Valid: false},
+		})
+	}
+
 	score, err := strconv.ParseFloat(response, 64)
 
 	if err != nil {
@@ -137,6 +160,12 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 		ID:          profile.ID,
 		GeminiScore: sql.NullFloat64{Float64: score, Valid: true},
 	})
+
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to update profile: " + err.Error(),
+		})
+	}
 
 	return c.JSON(200, map[string]any{
 		"data": updatedProfile.Float64,

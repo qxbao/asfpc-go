@@ -1347,6 +1347,25 @@ func (q *Queries) UpdateGeminiAnalysisProfile(ctx context.Context, arg UpdateGem
 	return gemini_score, err
 }
 
+const updateGeminiKeyUsage = `-- name: UpdateGeminiKeyUsage :one
+UPDATE public.gemini_key
+SET token_used = token_used + $2
+WHERE api_key = $1
+RETURNING id, api_key, token_used
+`
+
+type UpdateGeminiKeyUsageParams struct {
+	ApiKey    string
+	TokenUsed int64
+}
+
+func (q *Queries) UpdateGeminiKeyUsage(ctx context.Context, arg UpdateGeminiKeyUsageParams) (GeminiKey, error) {
+	row := q.db.QueryRowContext(ctx, updateGeminiKeyUsage, arg.ApiKey, arg.TokenUsed)
+	var i GeminiKey
+	err := row.Scan(&i.ID, &i.ApiKey, &i.TokenUsed)
+	return i, err
+}
+
 const updateGroupScannedAt = `-- name: UpdateGroupScannedAt :exec
 UPDATE public."group"
 SET scanned_at = NOW()

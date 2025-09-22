@@ -24,12 +24,12 @@ func (s *PromptService) GetPrompt(ctx context.Context, promptName string) (db.Pr
 
 func (s *PromptService) ReplacePrompt(prompt *string, kwargs ...string) string {
 	for i, kw := range kwargs {
-		placeholder := fmt.Sprintf("INSERT_%d", i)
+		placeholder := fmt.Sprintf("INSERT_%d", (i + 1))
 		replacement := kw
 		if kw == "" {
 			replacement = "NULL"
 		}
-		*prompt = strings.ReplaceAll(*prompt, placeholder, replacement)
+		*prompt = strings.Replace(*prompt, placeholder, replacement, 1)
 	}
 	return *prompt
 }

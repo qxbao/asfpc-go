@@ -263,3 +263,9 @@ SELECT COUNT(*) as total_gemini_keys FROM public.gemini_key;
 INSERT INTO public.gemini_key (api_key)
 VALUES ($1)
 RETURNING *;
+
+-- name: UpdateGeminiKeyUsage :one
+UPDATE public.gemini_key
+SET token_used = token_used + $2
+WHERE api_key = $1
+RETURNING *;
