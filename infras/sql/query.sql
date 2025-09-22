@@ -195,6 +195,48 @@ SET updated_at = NOW(),
 WHERE id = $1
 RETURNING *;
 
+-- name: DeleteJunkProfiles :one
+WITH non_null_count AS (
+  SELECT up.id,
+    (COALESCE(up.bio, '') != '')::int +
+    (COALESCE(up.location, '') != '')::int +
+    (COALESCE(up.work, '') != '')::int +
+    (COALESCE(up.locale, '') != '')::int +
+    (COALESCE(up.education, '') != '')::int +
+    (COALESCE(up.relationship_status, '') != '')::int +
+    (COALESCE(up.hometown, '') != '')::int +
+    (COALESCE(up.gender, '') != '')::int +
+    (COALESCE(up.birthday, '') != '')::int +
+    (COALESCE(up.email, '') != '')::int +
+    (COALESCE(up.phone, '') != '')::int AS field_count
+  FROM public.user_profile up
+),
+profiles_to_delete AS (
+  SELECT nnc.id 
+  FROM non_null_count nnc
+  JOIN public.user_profile up ON nnc.id = up.id
+  WHERE
+    up.is_scanned = true
+    AND (up.name = ''
+    OR up.name IS NULL
+    OR up.name LIKE '%Anonymous%' 
+    OR up.name LIKE '%anonymous%' 
+    OR up.name LIKE '%ẩn danh%'
+    OR up.name LIKE '%Ẩn danh%'
+    OR nnc.field_count < 1)
+),
+deleted_comments AS (
+  DELETE FROM public.comment 
+  WHERE author_id IN (SELECT id FROM profiles_to_delete)
+  RETURNING author_id
+),
+deleted_profiles AS (
+  DELETE FROM public.user_profile 
+  WHERE id IN (SELECT id FROM profiles_to_delete)
+  RETURNING id
+)
+SELECT COUNT(*) as deleted_count FROM deleted_profiles;
+
 -- name: GetPrompt :one
 SELECT * FROM public.prompt
 WHERE service_name = $1

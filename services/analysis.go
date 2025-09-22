@@ -216,3 +216,16 @@ func (as *AnalysisService) AddGeminiKey(c echo.Context) error {
 		"data": key,
 	})
 }
+
+func (as *AnalysisService) DeleteJunkProfiles(c echo.Context) error {
+	queries := as.Server.Queries
+	count, err := queries.DeleteJunkProfiles(c.Request().Context())
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to delete junk profiles: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data": count,
+	})
+}
