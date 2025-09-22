@@ -165,7 +165,7 @@ func (s ScanService) processGroups(input processGroupInput) GroupScanSuccess {
 
 func (s ScanService) processPosts(input processPostsInput) PostScanResult {
 	logger.Infof("Scanning posts for group %s (ID: %d)", input.Group.GroupName, input.Group.ID)
-	feedLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_GROUP_FEED_LIMIT", "10"), 10, 32)
+	feedLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_GROUP_FEED_LIMIT", "20"), 10, 32)
 	fg := FacebookGraph{
 		AccessToken: input.Group.AccessToken.String,
 	}
