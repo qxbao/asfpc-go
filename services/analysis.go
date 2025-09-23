@@ -21,6 +21,13 @@ type GeminiScoringTaskInput struct {
 	profile *db.GetProfilesAnalysisCronjobRow
 }
 
+type GeminiEmbeddingTaskInput struct {
+	ctx     context.Context
+	gs      *generative.GenerativeService
+	prompt  string
+	profile *db.UserProfile
+}
+
 type AnalysisService struct {
 	Server infras.Server
 }
@@ -398,6 +405,103 @@ func (as *AnalysisService) GetGeminiKeys(c echo.Context) error {
 		"total": count,
 		"data":  keys,
 	})
+}
+
+
+var defaultEmbeddingLimit int32 = 100
+func (as *AnalysisService) GeminiEmbeddingCronjob() {
+	logger.Info("Starting Gemini embedding cronjob")
+	ctx := context.Background()
+	defer ctx.Done()
+
+	limitStr := as.Server.GetConfig("GEMINI_EMBEDDING_LIMIT", "100")
+	limit, err := strconv.ParseInt(limitStr, 10, 32)
+	
+	if err != nil || limit <= 0 {
+		logger.Warn("Invalid GEMINI_EMBEDDING_LIMIT, using default %s", defaultEmbeddingLimit)
+		limit = int64(defaultEmbeddingLimit)
+	}
+
+	profiles, err := as.Server.Queries.GetProfileForEmbedding(ctx, int32(limit))
+	if err != nil {
+		logger.Error("Failed to get profiles for embedding: %v", err)
+		return
+	}
+	apiKey, err := as.Server.Queries.GetGeminiKeyForUse(ctx)
+
+	if err != nil {
+		logger.Error("Failed to get gemini key: %v", err)
+		return
+	}
+	generativeService := generative.GetGenerativeService(apiKey.ApiKey, "gemini-embedding-001")
+	err = generativeService.Init()
+
+	if err != nil {
+		logger.Error("Failed to initialize generative service: %v", err)
+		return
+	}
+
+	ps := PromptService{Server: as.Server}
+	prompt, err := ps.GetPrompt(ctx, "gemini-embedding")
+	
+	if err != nil {
+		logger.Error("Failed to get prompt (gemini-embedding): %v", err)
+		return
+	}
+
+	semaphore := async.GetSemaphore[GeminiEmbeddingTaskInput, bool](5)
+
+	
+	for _, profile := range profiles {
+		profilePromptContent := ps.ReplacePrompt(&prompt.Content,
+			profile.Name.String,
+			profile.Location.String,
+			profile.Work.String,
+			profile.Bio.String,
+			profile.Education.String,
+			profile.RelationshipStatus.String,
+			profile.Hometown.String,
+			profile.Locale,
+			profile.Gender.String,
+			profile.Birthday.String,
+		)
+		semaphore.Assign(as.geminiEmbeddingTask, GeminiEmbeddingTaskInput{
+			ctx:        ctx,
+			profile:   &profile,
+			prompt:    profilePromptContent,
+			gs:        generativeService,
+		})
+	}
+	_, errs := semaphore.Run()
+	generativeService.SaveUsage(ctx, as.Server.Queries)
+	count := 0
+	for i, err := range errs {
+		if err != nil {
+			logger.Error("Failed to process profile %d: %v", profiles[i].ID, err.Error())
+		} else {
+			count++
+		}
+	}
+	logger.Infof("Gemini embedding cronjob completed: %d/%d profiles processed successfully", count, len(profiles))
+}
+
+func (as *AnalysisService) geminiEmbeddingTask(input GeminiEmbeddingTaskInput) bool {
+	response, err := input.gs.GenerateEmbedding(input.prompt)
+
+	if err != nil {
+		panic(fmt.Errorf("failed to generate embedding: %v", err))
+	}
+
+	_, err = as.Server.Queries.CreateEmbeddedProfile(input.ctx, db.CreateEmbeddedProfileParams{
+		Pid:       input.profile.ID,
+		Embedding: response,
+	})
+
+	if err != nil {
+		panic(fmt.Errorf("failed to create embedded profile: %v", err))
+	}
+
+	return true
 }
 
 func (as *AnalysisService) AddGeminiKey(c echo.Context) error {

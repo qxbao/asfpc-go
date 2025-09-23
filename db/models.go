@@ -42,6 +42,13 @@ type Config struct {
 	Value string
 }
 
+type EmbeddedProfile struct {
+	ID        int32
+	Pid       int32
+	Embedding Vector
+	CreatedAt sql.NullTime
+}
+
 type FinancialAnalysis struct {
 	ID                   int32
 	FinancialStatus      string

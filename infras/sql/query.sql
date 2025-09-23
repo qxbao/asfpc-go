@@ -179,8 +179,20 @@ LIMIT $1;
 -- name: GetProfileStats :one
 SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles;
+
+-- name: GetProfileForEmbedding :many
+SELECT * FROM public.user_profile
+WHERE is_analyzed = true AND gemini_score IS NOT NULL AND id NOT IN (
+  SELECT pid FROM public.embedded_profile
+) LIMIT $1;
+
+-- name: CreateEmbeddedProfile :one
+INSERT INTO public.embedded_profile (pid, embedding, created_at)
+VALUES ($1, $2, NOW())
+RETURNING *;
 
 -- name: CountProfiles :one
 SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true;

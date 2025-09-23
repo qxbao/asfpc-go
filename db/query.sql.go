@@ -140,6 +140,29 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 	return i, err
 }
 
+const createEmbeddedProfile = `-- name: CreateEmbeddedProfile :one
+INSERT INTO public.embedded_profile (pid, embedding, created_at)
+VALUES ($1, $2, NOW())
+RETURNING id, pid, embedding, created_at
+`
+
+type CreateEmbeddedProfileParams struct {
+	Pid       int32
+	Embedding Vector
+}
+
+func (q *Queries) CreateEmbeddedProfile(ctx context.Context, arg CreateEmbeddedProfileParams) (EmbeddedProfile, error) {
+	row := q.db.QueryRowContext(ctx, createEmbeddedProfile, arg.Pid, arg.Embedding)
+	var i EmbeddedProfile
+	err := row.Scan(
+		&i.ID,
+		&i.Pid,
+		&i.Embedding,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createGeminiKey = `-- name: CreateGeminiKey :one
 INSERT INTO public.gemini_key (api_key)
 VALUES ($1)
@@ -1086,15 +1109,69 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 	return i, err
 }
 
+const getProfileForEmbedding = `-- name: GetProfileForEmbedding :many
+SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url FROM public.user_profile
+WHERE is_analyzed = true AND gemini_score IS NOT NULL AND id NOT IN (
+  SELECT pid FROM public.embedded_profile
+) LIMIT $1
+`
+
+func (q *Queries) GetProfileForEmbedding(ctx context.Context, limit int32) ([]UserProfile, error) {
+	rows, err := q.db.QueryContext(ctx, getProfileForEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UserProfile
+	for rows.Next() {
+		var i UserProfile
+		if err := rows.Scan(
+			&i.ID,
+			&i.FacebookID,
+			&i.Name,
+			&i.Bio,
+			&i.Location,
+			&i.Work,
+			&i.Education,
+			&i.RelationshipStatus,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ScrapedByID,
+			&i.IsAnalyzed,
+			&i.GeminiScore,
+			&i.IsScanned,
+			&i.Hometown,
+			&i.Locale,
+			&i.Gender,
+			&i.Birthday,
+			&i.Email,
+			&i.Phone,
+			&i.ProfileUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfileStats = `-- name: GetProfileStats :one
 SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles
 `
 
 type GetProfileStatsRow struct {
 	TotalProfiles    int64
+	EmbeddedCount    int64
 	ScannedProfiles  int64
 	AnalyzedProfiles int64
 }
@@ -1102,7 +1179,12 @@ type GetProfileStatsRow struct {
 func (q *Queries) GetProfileStats(ctx context.Context) (GetProfileStatsRow, error) {
 	row := q.db.QueryRowContext(ctx, getProfileStats)
 	var i GetProfileStatsRow
-	err := row.Scan(&i.TotalProfiles, &i.ScannedProfiles, &i.AnalyzedProfiles)
+	err := row.Scan(
+		&i.TotalProfiles,
+		&i.EmbeddedCount,
+		&i.ScannedProfiles,
+		&i.AnalyzedProfiles,
+	)
 	return i, err
 }
 

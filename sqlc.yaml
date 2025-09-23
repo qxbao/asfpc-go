@@ -1,4 +1,12 @@
 version: "2"
+overrides:
+  go:
+    overrides:
+      - db_type: "vector"
+        nullable: true
+        engine: "postgresql"
+        go_type:
+          type: "Vector"
 sql:
   - engine: "postgresql"
     queries: "./infras/sql/query.sql"

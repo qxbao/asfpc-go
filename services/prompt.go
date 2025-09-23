@@ -27,7 +27,7 @@ func (s *PromptService) ReplacePrompt(prompt *string, kwargs ...string) string {
 		placeholder := fmt.Sprintf("INSERT_%d", (i + 1))
 		replacement := kw
 		if kw == "" {
-			replacement = "NULL"
+			replacement = "(null)"
 		}
 		*prompt = strings.Replace(*prompt, placeholder, replacement, 1)
 	}
