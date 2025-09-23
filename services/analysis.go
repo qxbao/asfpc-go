@@ -523,6 +523,25 @@ func (as *AnalysisService) AddGeminiKey(c echo.Context) error {
 	})
 }
 
+func (as *AnalysisService) DeleteGeminiKey(c echo.Context) error {
+	queries := as.Server.Queries
+	dto := new(infras.DeleteGeminiKeyDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(400, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+	err := queries.DeleteGeminiKey(c.Request().Context(), dto.KeyID)
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to delete gemini key: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data": "success",
+	})
+}
+
 func (as *AnalysisService) DeleteJunkProfiles(c echo.Context) error {
 	queries := as.Server.Queries
 	count, err := queries.DeleteJunkProfiles(c.Request().Context())

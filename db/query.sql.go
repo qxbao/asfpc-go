@@ -317,6 +317,15 @@ func (q *Queries) DeleteAccounts(ctx context.Context, dollar_1 []int32) error {
 	return err
 }
 
+const deleteGeminiKey = `-- name: DeleteGeminiKey :exec
+DELETE FROM public.gemini_key WHERE id = $1
+`
+
+func (q *Queries) DeleteGeminiKey(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, deleteGeminiKey, id)
+	return err
+}
+
 const deleteGroup = `-- name: DeleteGroup :exec
 WITH deleted_posts AS (
   DELETE FROM public.post WHERE group_id = $1 RETURNING post.id

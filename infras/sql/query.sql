@@ -340,6 +340,9 @@ INSERT INTO public.gemini_key (api_key)
 VALUES ($1)
 RETURNING *;
 
+-- name: DeleteGeminiKey :exec
+DELETE FROM public.gemini_key WHERE id = $1;
+
 -- name: UpdateGeminiKeyUsage :one
 UPDATE public.gemini_key
 SET token_used = token_used + $2
