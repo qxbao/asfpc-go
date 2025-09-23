@@ -5,7 +5,7 @@ import (
 )
 
 func TestGenerateText(t *testing.T) {
-	service := GetGenerativeService("AIzaSyBef1EXGAu9l5usoT7SZ4CF39piU8NSaoY", "gemini-2.5-flash")
+	service := GetGenerativeService("", "gemini-2.5-flash")
 	
 	err := service.Init()
 	if err != nil {
@@ -21,7 +21,7 @@ func TestGenerateText(t *testing.T) {
 }
 
 func TestEmbedding(t *testing.T) {
-	service := GetGenerativeService("AIzaSyBef1EXGAu9l5usoT7SZ4CF39piU8NSaoY", "gemini-embedding-001")
+	service := GetGenerativeService("", "gemini-embedding-001")
 	err := service.Init()
 	if err != nil {
 		t.Fatalf("Failed to initialize service: %v", err)
