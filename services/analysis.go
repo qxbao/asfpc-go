@@ -76,6 +76,19 @@ func (as *AnalysisService) GetProfiles(c echo.Context) error {
 	})
 }
 
+func (as *AnalysisService) GetProfileStats(c echo.Context) error {
+	queries := as.Server.Queries
+	stats, err := queries.GetProfileStats(c.Request().Context())
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to get profile stats: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data": stats,
+	})
+}
+
 func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 	dto := new(infras.AnalyzeProfileRequest)
 	if err := c.Bind(dto); err != nil {
@@ -195,10 +208,15 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 	ctx := context.Background()
 	defer ctx.Done()
 
-	profiles, err := as.Server.Queries.GetProfilesAnalysisCronjob(ctx, db.GetProfilesAnalysisCronjobParams{
-		Limit:  15,
-		Offset: 0,
-	})
+	geminiAPILimit := as.Server.GetConfig("GEMINI_API_LIMIT", "15")
+	geminiAPILimitInt, err := strconv.ParseInt(geminiAPILimit, 10, 32)
+
+	if err != nil || geminiAPILimitInt <= 0 {
+		logger.Warn("Invalid GEMINI_API_LIMIT, using default 15")
+		geminiAPILimitInt = 15
+	}
+
+	profiles, err := as.Server.Queries.GetProfilesAnalysisCronjob(ctx, int32(geminiAPILimitInt))
 
 	if err != nil {
 		as.Server.Queries.LogAction(ctx, db.LogActionParams{
@@ -306,9 +324,10 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 		})
 	}
 
-	succs, errs := semaphore.Run()
+	_, errs := semaphore.Run()
 
 	generativeService.SaveUsage(ctx, as.Server.Queries)
+	count := 0
 
 	for i, err := range errs {
 		if err != nil {
@@ -322,12 +341,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 				AccountID: sql.NullInt32{Int32: 0, Valid: false},
 			})
 			anlLogger.Error("Failed to process profile %d: %v", profiles[i].ID, err.Error())
-		}
-	}
-
-	count := 0
-	for _, succ := range succs {
-		if succ {
+		} else {
 			count++
 		}
 	}

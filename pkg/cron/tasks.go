@@ -19,7 +19,7 @@ func CollectTasks(s *infras.Server) []Task {
 func scanGroups(s *infras.Server) Task {
 	return Task{
 		Def: gocron.DurationJob(
-			30 * time.Minute,
+			10 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
 			scanService := &services.ScanService{
@@ -33,7 +33,7 @@ func scanGroups(s *infras.Server) Task {
 func scanProfiles(s *infras.Server) Task {
 	return Task{
 		Def: gocron.DurationJob(
-			30 * time.Minute,
+			10 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
 			scanService := &services.ScanService{

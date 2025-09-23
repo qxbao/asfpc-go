@@ -174,7 +174,13 @@ SELECT *,
 FROM public.user_profile up
 WHERE up.is_scanned = true AND up.is_analyzed = false
 ORDER BY non_null_count DESC, up.updated_at ASC
-LIMIT $1 OFFSET $2;
+LIMIT $1;
+
+-- name: GetProfileStats :one
+SELECT
+  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles;
 
 -- name: CountProfiles :one
 SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true;
@@ -289,8 +295,6 @@ SELECT * FROM public.config;
 
 -- name: GetStats :one
 SELECT
-  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
-  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
   (SELECT COUNT(*) FROM public."group") AS total_groups,
   (SELECT COUNT(*) FROM public.comment) AS total_comments,
   (SELECT COUNT(*) FROM public.post) AS total_posts;

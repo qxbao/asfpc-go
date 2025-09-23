@@ -1086,6 +1086,26 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 	return i, err
 }
 
+const getProfileStats = `-- name: GetProfileStats :one
+SELECT
+  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles
+`
+
+type GetProfileStatsRow struct {
+	TotalProfiles    int64
+	ScannedProfiles  int64
+	AnalyzedProfiles int64
+}
+
+func (q *Queries) GetProfileStats(ctx context.Context) (GetProfileStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getProfileStats)
+	var i GetProfileStatsRow
+	err := row.Scan(&i.TotalProfiles, &i.ScannedProfiles, &i.AnalyzedProfiles)
+	return i, err
+}
+
 const getProfilesAnalysisCronjob = `-- name: GetProfilesAnalysisCronjob :many
 SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url,
   (COALESCE(up.bio, '') != '')::int +
@@ -1102,13 +1122,8 @@ SELECT id, facebook_id, name, bio, location, work, education, relationship_statu
 FROM public.user_profile up
 WHERE up.is_scanned = true AND up.is_analyzed = false
 ORDER BY non_null_count DESC, up.updated_at ASC
-LIMIT $1 OFFSET $2
+LIMIT $1
 `
-
-type GetProfilesAnalysisCronjobParams struct {
-	Limit  int32
-	Offset int32
-}
 
 type GetProfilesAnalysisCronjobRow struct {
 	ID                 int32
@@ -1135,8 +1150,8 @@ type GetProfilesAnalysisCronjobRow struct {
 	NonNullCount       int32
 }
 
-func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, arg GetProfilesAnalysisCronjobParams) ([]GetProfilesAnalysisCronjobRow, error) {
-	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisCronjob, arg.Limit, arg.Offset)
+func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, limit int32) ([]GetProfilesAnalysisCronjobRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisCronjob, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1349,31 +1364,21 @@ func (q *Queries) GetPrompt(ctx context.Context, serviceName string) (Prompt, er
 
 const getStats = `-- name: GetStats :one
 SELECT
-  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
-  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
   (SELECT COUNT(*) FROM public."group") AS total_groups,
   (SELECT COUNT(*) FROM public.comment) AS total_comments,
   (SELECT COUNT(*) FROM public.post) AS total_posts
 `
 
 type GetStatsRow struct {
-	TotalProfiles   int64
-	ScannedProfiles int64
-	TotalGroups     int64
-	TotalComments   int64
-	TotalPosts      int64
+	TotalGroups   int64
+	TotalComments int64
+	TotalPosts    int64
 }
 
 func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 	row := q.db.QueryRowContext(ctx, getStats)
 	var i GetStatsRow
-	err := row.Scan(
-		&i.TotalProfiles,
-		&i.ScannedProfiles,
-		&i.TotalGroups,
-		&i.TotalComments,
-		&i.TotalPosts,
-	)
+	err := row.Scan(&i.TotalGroups, &i.TotalComments, &i.TotalPosts)
 	return i, err
 }
 

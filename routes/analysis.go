@@ -10,6 +10,7 @@ func InitAnalysisRoutes(s infras.Server) {
 	e := s.Echo
 
 	e.GET("/analysis/profile/list", service.GetProfiles)
+	e.GET("/analysis/profile/stats", service.GetProfileStats)
 	e.GET("/analysis/key/list", service.GetGeminiKeys)
 	e.POST("/analysis/key/add", service.AddGeminiKey)
 	e.POST("/analysis/profile/analyze", service.AnalyzeProfileWithGemini)
