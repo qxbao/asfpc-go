@@ -150,7 +150,7 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 
 	promptContent := prompt.Content
 
-	promptContent = promptService.ReplacePrompt(&promptContent,
+	promptContent = promptService.ReplacePrompt(promptContent,
 		businessDesc.Content,
 		profile.Name.String,
 		profile.Location.String,
@@ -310,7 +310,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 	semaphore := async.GetSemaphore[GeminiScoringTaskInput, bool](15)
 	
 	for _, profile := range profiles {
-		profilePromptContent := promptService.ReplacePrompt(&prompt.Content,
+		profilePromptContent := promptService.ReplacePrompt(prompt.Content,
 			businessDesc.Content,
 			profile.Name.String,
 			profile.Location.String,
@@ -453,7 +453,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 
 	
 	for _, profile := range profiles {
-		profilePromptContent := ps.ReplacePrompt(&prompt.Content,
+		profilePromptContent := ps.ReplacePrompt(prompt.Content,
 			profile.Name.String,
 			profile.Location.String,
 			profile.Work.String,
