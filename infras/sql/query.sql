@@ -185,7 +185,7 @@ SELECT
 
 -- name: GetProfileForEmbedding :many
 SELECT * FROM public.user_profile
-WHERE is_analyzed = true AND gemini_score IS NOT NULL AND id NOT IN (
+WHERE id NOT IN (
   SELECT pid FROM public.embedded_profile
 ) LIMIT $1;
 
