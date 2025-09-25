@@ -593,7 +593,7 @@ func (as *AnalysisService) ImportProfiles(c echo.Context) error {
 		})
 	}
 	defer src.Close()
-	
+
 	var profiles []db.GetProfilesForExportRow
 
 	if err := json.NewDecoder(src).Decode(&profiles); err != nil {
@@ -632,7 +632,7 @@ func (as *AnalysisService) ImportProfiles(c echo.Context) error {
 			Embedding: profile.Embedding,
 		})
 
-		if err != nil {
+		if err == nil {
 			successCount++
 		}
 	}
