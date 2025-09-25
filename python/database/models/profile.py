@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
-import pandas as pd
 from sqlalchemy import VARCHAR, ForeignKey, Integer, String, Text, DateTime
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
