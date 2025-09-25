@@ -62,8 +62,9 @@ class TaskNavigator:
     input_df = pd.DataFrame([p.to_df() for p in profiles])
     from ml.model import PotentialCustomerScoringModel
     model = PotentialCustomerScoringModel()
+      
     model.load_data(input_df)
-    model.train()
+    model.train(auto_tune=self.config.get("auto-tune", True))
     self.logger.info("Model trained successfully")
     test_results = model.test()
     self.logger.info(f"Test result: {test_results}")    
