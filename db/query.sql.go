@@ -1352,6 +1352,82 @@ func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAn
 	return items, nil
 }
 
+const getProfilesForExport = `-- name: GetProfilesForExport :many
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_analyzed, up.gemini_score, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, ep.embedding FROM public.user_profile up
+JOIN public.embedded_profile ep ON up.id = ep.pid
+`
+
+type GetProfilesForExportRow struct {
+	ID                 int32
+	FacebookID         string
+	Name               sql.NullString
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ScrapedByID        int32
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
+	IsScanned          bool
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+	ProfileUrl         string
+	Embedding          Vector
+}
+
+func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExportRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesForExport)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProfilesForExportRow
+	for rows.Next() {
+		var i GetProfilesForExportRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FacebookID,
+			&i.Name,
+			&i.Bio,
+			&i.Location,
+			&i.Work,
+			&i.Education,
+			&i.RelationshipStatus,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ScrapedByID,
+			&i.IsAnalyzed,
+			&i.GeminiScore,
+			&i.IsScanned,
+			&i.Hometown,
+			&i.Locale,
+			&i.Gender,
+			&i.Birthday,
+			&i.Email,
+			&i.Phone,
+			&i.ProfileUrl,
+			&i.Embedding,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfilesToScan = `-- name: GetProfilesToScan :many
 SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_analyzed, up.gemini_score, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, a.access_token, a.id as account_id
 FROM public.user_profile up

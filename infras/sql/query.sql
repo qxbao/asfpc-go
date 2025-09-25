@@ -231,6 +231,10 @@ SET updated_at = NOW(),
 WHERE id = $1
 RETURNING *;
 
+-- name: GetProfilesForExport :many
+SELECT up.*, ep.embedding FROM public.user_profile up
+JOIN public.embedded_profile ep ON up.id = ep.pid;
+
 -- name: DeleteJunkProfiles :one
 WITH non_null_count AS (
   SELECT up.id,

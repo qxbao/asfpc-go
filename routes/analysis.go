@@ -12,6 +12,7 @@ func InitAnalysisRoutes(s infras.Server) {
 	e.GET("/analysis/profile/list", service.GetProfiles)
 	e.GET("/analysis/profile/stats", service.GetProfileStats)
 	e.GET("/analysis/key/list", service.GetGeminiKeys)
+	e.GET("/analysis/profile/export", service.ExportProfiles)
 	e.POST("/analysis/key/add", service.AddGeminiKey)
 	e.POST("/analysis/profile/analyze", service.AnalyzeProfileWithGemini)
 	e.DELETE("/analysis/key/delete", service.DeleteGeminiKey)

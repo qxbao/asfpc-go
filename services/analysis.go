@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/labstack/echo/v4"
@@ -306,9 +308,9 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 		anlLogger.Error("Failed to get profiles: %v", err.Error())
 		return
 	}
-	
+
 	semaphore := async.GetSemaphore[GeminiScoringTaskInput, bool](15)
-	
+
 	for _, profile := range profiles {
 		profilePromptContent := promptService.ReplacePrompt(prompt.Content,
 			businessDesc.Content,
@@ -407,8 +409,8 @@ func (as *AnalysisService) GetGeminiKeys(c echo.Context) error {
 	})
 }
 
-
 var defaultEmbeddingLimit int32 = 100
+
 func (as *AnalysisService) GeminiEmbeddingCronjob() {
 	logger.Info("Starting Gemini embedding cronjob")
 	ctx := context.Background()
@@ -416,7 +418,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 
 	limitStr := as.Server.GetConfig("GEMINI_EMBEDDING_LIMIT", "100")
 	limit, err := strconv.ParseInt(limitStr, 10, 32)
-	
+
 	if err != nil || limit <= 0 {
 		logger.Warn("Invalid GEMINI_EMBEDDING_LIMIT, using default %s", defaultEmbeddingLimit)
 		limit = int64(defaultEmbeddingLimit)
@@ -443,7 +445,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 
 	ps := PromptService{Server: as.Server}
 	prompt, err := ps.GetPrompt(ctx, "gemini-embedding")
-	
+
 	if err != nil {
 		logger.Error("Failed to get prompt (gemini-embedding): %v", err)
 		return
@@ -451,7 +453,6 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 
 	semaphore := async.GetSemaphore[GeminiEmbeddingTaskInput, bool](5)
 
-	
 	for _, profile := range profiles {
 		profilePromptContent := ps.ReplacePrompt(prompt.Content,
 			profile.Name.String,
@@ -466,10 +467,10 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 			profile.Birthday.String,
 		)
 		semaphore.Assign(as.geminiEmbeddingTask, GeminiEmbeddingTaskInput{
-			ctx:        ctx,
-			profile:   &profile,
-			prompt:    profilePromptContent,
-			gs:        generativeService,
+			ctx:     ctx,
+			profile: &profile,
+			prompt:  profilePromptContent,
+			gs:      generativeService,
 		})
 	}
 	_, errs := semaphore.Run()
@@ -553,4 +554,27 @@ func (as *AnalysisService) DeleteJunkProfiles(c echo.Context) error {
 	return c.JSON(200, map[string]any{
 		"data": count,
 	})
+}
+
+func (as *AnalysisService) ExportProfiles(c echo.Context) error {
+	queries := as.Server.Queries
+	profiles, err := queries.GetProfilesForExport(c.Request().Context())
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to get profiles: " + err.Error(),
+		})
+	}
+	if profiles == nil {
+		profiles = make([]db.GetProfilesForExportRow, 0)
+	}
+	
+	c.Response().Header().Set(echo.HeaderContentType, "application/json")
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		"attachment; filename=data.json",
+	)
+
+	enc := json.NewEncoder(c.Response().Writer)
+	c.Response().WriteHeader(http.StatusOK)
+	return enc.Encode(profiles)
 }
