@@ -107,11 +107,12 @@ class PotentialCustomerScoringModel:
       "reg_alpha": [0, 0.1, 0.5, 1],  # L1
       "reg_lambda": [0.5, 1, 1.5, 2],  # L2
     }
+    
     try:
       search = RandomizedSearchCV(
         estimator=xgb.XGBRegressor(**params, verbosity=0),
         param_distributions=param_grid,
-        n_iter=50,
+        n_iter=10,
         scoring="neg_root_mean_squared_error",
         cv=3,
         verbose=1,
@@ -124,7 +125,7 @@ class PotentialCustomerScoringModel:
       search = RandomizedSearchCV(
         estimator=xgb.XGBRegressor(**params, verbosity=0),
         param_distributions=param_grid,
-        n_iter=50,
+        n_iter=10,
         scoring="neg_root_mean_squared_error",
         cv=3,
         verbose=1,
@@ -177,7 +178,9 @@ class PotentialCustomerScoringModel:
     if self.model is None:
         raise ValueError("No model to test")
 
-    y_pred = self.model.predict(self.X_test)
+    # Convert test data to DMatrix for XGBoost prediction
+    dtest = xgb.DMatrix(self.X_test)
+    y_pred = self.model.predict(dtest)
     rmse = root_mean_squared_error(self.y_test, y_pred)
 
     self.test_results = {

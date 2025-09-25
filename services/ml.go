@@ -29,11 +29,25 @@ func (s *MLService) Train(c echo.Context) error {
 		*dto.ModelName = "Model_" + time.Now().Format("20060102150405")
 	}
 
+	if dto.AutoTune == nil {
+		dto.AutoTune = new(bool)
+		*dto.AutoTune = false
+	}
+
 	pythonService := PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
 	}
 
-	res, err := pythonService.RunScript("--task=train-model", fmt.Sprintf("--model-name=%s", *dto.ModelName))
+	auto_tune := "False"
+	if *dto.AutoTune {
+		auto_tune = "True"
+	}
+
+	res, err := pythonService.RunScript("--task=train-model",
+		fmt.Sprintf("--model-name=%s", *dto.ModelName),
+		fmt.Sprintf("--auto-tune=%s", auto_tune),
+	)
+	
 	if err != nil {
 		return c.JSON(500, map[string]any{
 			"error": "Failed to run python script: " + err.Error(),
