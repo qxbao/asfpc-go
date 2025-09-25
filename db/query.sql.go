@@ -1549,6 +1549,83 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 	return i, err
 }
 
+const importProfile = `-- name: ImportProfile :one
+INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url
+`
+
+type ImportProfileParams struct {
+	FacebookID         string
+	Name               sql.NullString
+	Bio                sql.NullString
+	Location           sql.NullString
+	Work               sql.NullString
+	Education          sql.NullString
+	RelationshipStatus sql.NullString
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	IsScanned          bool
+	Hometown           sql.NullString
+	Locale             string
+	Gender             sql.NullString
+	Birthday           sql.NullString
+	Email              sql.NullString
+	Phone              sql.NullString
+	ProfileUrl         string
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
+}
+
+func (q *Queries) ImportProfile(ctx context.Context, arg ImportProfileParams) (UserProfile, error) {
+	row := q.db.QueryRowContext(ctx, importProfile,
+		arg.FacebookID,
+		arg.Name,
+		arg.Bio,
+		arg.Location,
+		arg.Work,
+		arg.Education,
+		arg.RelationshipStatus,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.IsScanned,
+		arg.Hometown,
+		arg.Locale,
+		arg.Gender,
+		arg.Birthday,
+		arg.Email,
+		arg.Phone,
+		arg.ProfileUrl,
+		arg.IsAnalyzed,
+		arg.GeminiScore,
+	)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.FacebookID,
+		&i.Name,
+		&i.Bio,
+		&i.Location,
+		&i.Work,
+		&i.Education,
+		&i.RelationshipStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScrapedByID,
+		&i.IsAnalyzed,
+		&i.GeminiScore,
+		&i.IsScanned,
+		&i.Hometown,
+		&i.Locale,
+		&i.Gender,
+		&i.Birthday,
+		&i.Email,
+		&i.Phone,
+		&i.ProfileUrl,
+	)
+	return i, err
+}
+
 const logAction = `-- name: LogAction :exec
 INSERT INTO public.log (account_id, "action", target_id, description, created_at)
 VALUES ($1, $2, $3, $4, NOW())
