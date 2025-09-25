@@ -1,16 +1,21 @@
+import logging
 import sys
 from typing import Any
+
+import pandas as pd
 
 from database.services.account import AccountService
 from browser.account import AccountAutomationService
 from browser.group import GroupAutomationService
 from database.services.group import GroupService
+from database.services.profile import ProfileService
 from utils.dialog import DialogUtil
 
 
 class TaskNavigator:
   def __init__(self, config: dict[str, Any]):
     self.config = config
+    self.logger = logging.getLogger("TaskNavigator")
     
   async def login(self) -> None:
     user_id = self.config.get("uid", None)
@@ -45,3 +50,23 @@ class TaskNavigator:
       sys.exit(1)
     else:
       sys.exit(0)
+      
+  async def train_model(self) -> None:
+    model_name = self.config.get("model-name", "ModelX")
+    self.logger.info(f"Training model: {model_name}")
+    ps = ProfileService()
+    profiles = await ps.get_training_profiles()
+    if not profiles:
+      raise ValueError("No profiles available for training")
+    self.logger.info(f"Found {len(profiles)} profiles for training")
+    input_df = pd.DataFrame([p.to_df() for p in profiles])
+    from ml.model import PotentialCustomerScoringModel
+    model = PotentialCustomerScoringModel()
+    model.load_data(input_df)
+    model.train()
+    self.logger.info("Model trained successfully")
+    test_results = model.test()
+    self.logger.info(f"Test result: {test_results}")    
+    model.save_model(model_name)
+    self.logger.info(f"Model saved as: {model_name}")
+    

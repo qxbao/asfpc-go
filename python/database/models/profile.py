@@ -1,14 +1,15 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
+import pandas as pd
 from sqlalchemy import VARCHAR, ForeignKey, Integer, String, Text, DateTime
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from pydantic import BaseModel
+
 from .base import Base
 
 if TYPE_CHECKING:
+    from .emb_profile import EmbeddedProfile
     from .account import Account
     from .image import Image
-    from .financial_analysis import FinancialAnalysis
     from .comment import Comment
 
 
@@ -43,54 +44,16 @@ class UserProfile(Base):
     scraped_by_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
     scraped_by: Mapped["Account"] = relationship(back_populates="scraped_profiles")
     images: Mapped[List["Image"]] = relationship(back_populates="belong_to")
-    financial_analyses: Mapped[List["FinancialAnalysis"]] = relationship(
-        back_populates="user_profile", cascade="all, delete-orphan"
-    )
+    emb_profile: Mapped[Optional["EmbeddedProfile"]] = relationship(back_populates="profile", lazy="selectin", uselist=False)
     comments: Mapped[List["Comment"]] = relationship(back_populates="author")
-
-    def to_schema(self) -> "UserProfileSchema":
-        return UserProfileSchema.model_validate(self)
-
-    def to_json(self) -> dict:
-        return UserProfileSchema.model_validate(self).model_dump()
-
-
-class UserProfileSchema(BaseModel):
-    """Schema for UserProfile model"""
-
-    id: int
-    facebook_id: str
-    name: Optional[str] = None
-    bio: Optional[str] = None
-    location: Optional[str] = None
-    work: Optional[str] = None
-    education: Optional[str] = None
-    relationship_status: Optional[str] = None
-    profile_url: str
-    profile_picture_url: Optional[str] = None
-    posts_sample: Optional[str] = None
-    friends_count: Optional[int] = None
-    is_verified: bool = False
-    last_scraped: datetime
-    created_at: datetime
-    updated_at: datetime
-    scraped_by_account_id: int
-
-    model_config = {"from_attributes": True}
-
-
-class UserProfileCreateDTO(BaseModel):
-    """Data Transfer Object for creating a new user profile"""
-
-    facebook_id: str
-    name: Optional[str] = None
-    bio: Optional[str] = None
-    location: Optional[str] = None
-    work: Optional[str] = None
-    education: Optional[str] = None
-    relationship_status: Optional[str] = None
-    profile_url: str
-    profile_picture_url: Optional[str] = None
-    posts_sample: Optional[str] = None
-    friends_count: Optional[int] = None
-    is_verified: bool = False
+    
+    def to_df(self) -> dict:
+        """Convert profile data to a DataFrame"""
+        return {
+            "embedding": [self.emb_profile.embedding if self.emb_profile else None],
+            "gender": self.gender,
+            "relationship_status": self.relationship_status,
+            "locale": self.locale,
+            "birthday": self.birthday,
+            "gemini_score": self.gemini_score,
+        }

@@ -98,6 +98,7 @@ func (s Server) initRoute() error {
 	routes.InitAccountRoutes(s.Server)
 	routes.InitDataRoutes(s.Server)
 	routes.InitAnalysisRoutes(s.Server)
+	routes.InitMLRoutes(s.Server)
 	return nil
 }
 

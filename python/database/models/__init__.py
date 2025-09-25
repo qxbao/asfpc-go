@@ -6,7 +6,7 @@ from .post import Post
 from .comment import Comment
 from .image import Image
 from .profile import UserProfile
-from .financial_analysis import FinancialAnalysis
+from .emb_profile import EmbeddedProfile
 from .prompt import Prompt
 from .config import Config
 
@@ -19,7 +19,7 @@ __all__ = [
     "Comment",
     "Image",
     "UserProfile",
-    "FinancialAnalysis",
+    "EmbeddedProfile",
     "Prompt",
     "Config"
 ]

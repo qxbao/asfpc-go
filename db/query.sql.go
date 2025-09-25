@@ -1120,7 +1120,7 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 
 const getProfileForEmbedding = `-- name: GetProfileForEmbedding :many
 SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_analyzed, gemini_score, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url FROM public.user_profile
-WHERE is_analyzed = true AND gemini_score IS NOT NULL AND id NOT IN (
+WHERE id NOT IN (
   SELECT pid FROM public.embedded_profile
 ) LIMIT $1
 `
