@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -50,7 +51,7 @@ func (s *MLService) Train(c echo.Context) error {
 		fmt.Sprintf("--model-name=%s", *dto.ModelName),
 		fmt.Sprintf("--auto-tune=%s", auto_tune),
 	)
-	
+
 	if err != nil {
 		return c.JSON(500, map[string]any{
 			"error": "Failed to run python script: " + err.Error(),
@@ -62,15 +63,15 @@ func (s *MLService) Train(c echo.Context) error {
 }
 
 type ModelMetadata struct {
-	RMSE     float64 `json:"rmse"`
+	RMSE    float64 `json:"rmse"`
 	R2      float64 `json:"r2"`
 	MAE     float64 `json:"mae"`
 	SavedAt string  `json:"saved_at"`
 }
 
 type ModelInfo struct {
-	Name     string
-	Metadata *ModelMetadata
+	Name       string
+	Metadata   *ModelMetadata
 	Validation *ModelValidation
 }
 
@@ -163,10 +164,10 @@ func (s *MLService) ValidateModel(modelName string) (ModelValidation, error) {
 	if err != nil {
 		return ModelValidation{IsExists: true, IsValid: false}, nil
 	}
-	requiredFiles := map[string] bool{
-		"model.json": true,
-		"encoders.pkl": true,
-		"scalers.pkl": true,
+	requiredFiles := map[string]bool{
+		"model.json":    true,
+		"encoders.pkl":  true,
+		"scalers.pkl":   true,
 		"metadata.json": true,
 	}
 	validCount := 0
@@ -187,6 +188,21 @@ func (s *MLService) DeleteModel(c echo.Context) error {
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(400, map[string]any{
 			"error": "Invalid request body",
+		})
+	}
+
+	if dto.ModelName == "" {
+		return c.JSON(400, map[string]any{
+			"error": "Model name is required",
+		})
+	}
+
+	if dto.ModelName == "." || dto.ModelName == ".." ||
+		strings.Contains(dto.ModelName, "/") ||
+		strings.Contains(dto.ModelName, "\\") ||
+		strings.Contains(dto.ModelName, "*") {
+		return c.JSON(400, map[string]any{
+			"error": "Invalid model name",
 		})
 	}
 
@@ -211,6 +227,17 @@ func (s *MLService) DeleteModel(c echo.Context) error {
 
 	modelsDir := path.Join("python", "resources", "models")
 	modelPath := path.Join(path.Dir(exc), modelsDir, dto.ModelName)
+
+	// Log what we're about to delete for debugging
+	fmt.Printf("Deleting model path: %s\n", modelPath)
+
+	// Double-check the path is within the models directory
+	modelsBasePath := path.Join(path.Dir(exc), modelsDir)
+	if !strings.HasPrefix(modelPath, modelsBasePath) {
+		return c.JSON(400, map[string]any{
+			"error": "Invalid model path",
+		})
+	}
 
 	if err := os.RemoveAll(modelPath); err != nil {
 		return c.JSON(500, map[string]any{
@@ -287,7 +314,7 @@ func (s *MLService) ExportModel(c echo.Context) error {
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "application/zip")
-	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+ dto.ModelName +`.zip"`)
+	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+dto.ModelName+`.zip"`)
 	c.Response().WriteHeader(http.StatusOK)
 	_, err = c.Response().Write(buf.Bytes())
 	return err

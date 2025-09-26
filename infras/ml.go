@@ -6,5 +6,5 @@ type MLTrainDTO struct {
 }
 
 type WithModelNameDTO struct {
-	ModelName string `query:"model_name" validate:"required"`
+	ModelName string `json:"model_name" validate:"required"`
 }
