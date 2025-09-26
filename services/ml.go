@@ -320,7 +320,7 @@ func (s *MLService) ExportModel(c echo.Context) error {
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "application/zip")
-	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+dto.ModelName+`.zip"`)
+	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="model_`+dto.ModelName+`.zip"`)
 	c.Response().WriteHeader(http.StatusOK)
 	_, err = c.Response().Write(buf.Bytes())
 	return err

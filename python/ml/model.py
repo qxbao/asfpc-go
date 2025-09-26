@@ -2,11 +2,13 @@ from datetime import datetime
 import json
 import logging
 import os
+from typing import Any
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
+from xgboost.callback import LearningRateScheduler
 import numpy as np
 import optuna
 from optuna.integration import XGBoostPruningCallback
@@ -201,7 +203,7 @@ class PotentialCustomerScoringModel:
                     dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)
                 
                 pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
-                lrdecay_callback = xgb.callback.LearningRateScheduler(
+                lrdecay_callback = LearningRateScheduler(
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
 
@@ -216,9 +218,10 @@ class PotentialCustomerScoringModel:
                     shuffle=True,
                     callbacks=[pruning_callback, lrdecay_callback],
                     verbose_eval=False,
+                    as_pandas=True
                 )
                 
-                best_rmse = cv_results["test-rmse-mean"].min()
+                best_rmse = cv_results["test-rmse-mean"].min() # type: ignore
                 
                 if self.use_gpu:
                     import gc
@@ -414,16 +417,17 @@ class PotentialCustomerScoringModel:
             
         self.logger.info(f"Model loaded from {model_dir}")
       
-    def predict(self, df: pd.DataFrame) -> list:
+    def predict(self, df: pd.DataFrame) -> Any:
         if self.model is None:
             raise ValueError("No model found")
         X = self._prepare_features(df)
         dmatrix = xgb.DMatrix(X)
         predictions = self.model.predict(dmatrix)  # Will use GPU if model was trained on GPU and device=cuda
+
         # Convert numpy array to Python list for JSON serialization
         return self._convert_numpy_types(predictions)
     
-    def _convert_numpy_types(self, obj):
+    def _convert_numpy_types(self, obj) -> Any:
         """Recursively convert numpy types to Python native types for JSON serialization"""
         if isinstance(obj, dict):
             return {key: self._convert_numpy_types(value) for key, value in obj.items()}

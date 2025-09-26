@@ -142,6 +142,8 @@ SELECT
   up.facebook_id,
   up.name,
   up.is_analyzed,
+  up.gemini_score,
+  up.model_score,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
