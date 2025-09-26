@@ -29,7 +29,7 @@ class PotentialCustomerScoringModel:
         self.scaler = None
         self.embedding_dim = 768
         self.logger = logging.getLogger(__name__)
-        self.use_gpu = True
+        self.device_type, self.device_id = self._detect_best_device()
 
     def _get_gpu_info(self) -> str:
         """Get GPU information for logging"""
@@ -46,6 +46,64 @@ class PotentialCustomerScoringModel:
             return "GPU information not available"
         except Exception:
             return "GPU information not available"
+
+    def _detect_best_device(self) -> tuple[str, str]:
+        """Detect the best available compute device (CUDA > OpenCL > CPU)"""
+        # Try CUDA first
+        try:
+            # Test CUDA availability
+            test_dmatrix = xgb.DMatrix(np.random.rand(10, 5))
+            test_params = {"device": "cuda:0", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
+            xgb.train(test_params, test_dmatrix, num_boost_round=1, verbose_eval=False)
+            self.logger.info("CUDA GPU detected and working")
+            return "cuda", "cuda:0"
+        except Exception as e:
+            self.logger.debug(f"CUDA not available: {e}")
+
+        # Try OpenCL
+        try:
+            import pyopencl as cl
+            platforms = cl.get_platforms()
+            if platforms:
+                # Find the best OpenCL device (prefer GPU)
+                best_device = None
+                best_score = 0
+                
+                for platform in platforms:
+                    devices = platform.get_devices()
+                    for device in devices:
+                        score = 0
+                        if device.type == cl.device_type.GPU:
+                            score += 100
+                        elif device.type == cl.device_type.ACCELERATOR:  
+                            score += 50
+                        elif device.type == cl.device_type.CPU:
+                            score += 10
+                        
+                        # Prefer higher compute units and memory
+                        score += device.max_compute_units
+                        score += min(device.max_mem_alloc_size // (1024**3), 10)  # GB bonus
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_device = device
+                
+                if best_device:
+                    # Test OpenCL with XGBoost
+                    test_dmatrix = xgb.DMatrix(np.random.rand(10, 5))
+                    test_params = {"device": "opencl:0", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
+                    xgb.train(test_params, test_dmatrix, num_boost_round=1, verbose_eval=False)
+                    
+                    device_name = best_device.name.strip()
+                    device_type_str = "GPU" if best_device.type == cl.device_type.GPU else "CPU" if best_device.type == cl.device_type.CPU else "ACCELERATOR"
+                    self.logger.info(f"OpenCL {device_type_str} detected: {device_name}")
+                    return "opencl", "opencl:0"
+        except Exception as e:
+            self.logger.debug(f"OpenCL not available: {e}")
+
+        # Fallback to CPU
+        self.logger.info("Using CPU for computation")
+        return "cpu", "cpu"
 
     def _validate_embedding(self, emb):
         try:
@@ -189,10 +247,11 @@ class PotentialCustomerScoringModel:
                 # GPU-specific optimizations
                 if self.use_gpu:
                     params.update({
-                        "device": "cuda:0",
+                        "device": "gpu",
                         "max_bin": 256,
                         "single_precision_histogram": True,
                     })
+            
                 
                 n_estimators = trial.suggest_int("n_estimators", 100, 500)  # Reduced for faster GPU trials
                 
