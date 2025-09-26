@@ -156,7 +156,7 @@ class PotentialCustomerScoringModel:
         # Reduce sample size for GPU memory optimization
         # GPU memory is more limited than RAM
         if self.use_gpu:
-            sample_size = min(8000, len(self.X_train))  # Smaller sample for GPU
+            sample_size = min(9000, len(self.X_train))  # Smaller sample for GPU
             self.logger.info(f"Using GPU optimization with {sample_size} samples")
         else:
             sample_size = min(12000, len(self.X_train))
