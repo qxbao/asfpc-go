@@ -11,7 +11,6 @@ import xgboost as xgb
 from xgboost.callback import LearningRateScheduler
 import numpy as np
 import optuna
-from optuna.integration import XGBoostPruningCallback
 
 class PotentialCustomerScoringModel:
     model_path = os.path.join(os.getcwd(), "resources", "models")
@@ -201,13 +200,6 @@ class PotentialCustomerScoringModel:
                     dtrain = xgb.DMatrix(X_sample, label=y_sample, enable_categorical=False)
                 else:
                     dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)
-                
-                pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
-                # Fallback for different XGBoost versions that may use different metric keys
-                try:
-                  pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
-                except Exception:
-                  pruning_callback = XGBoostPruningCallback(trial, "test-rmse")
                 lrdecay_callback = LearningRateScheduler(
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
@@ -221,7 +213,7 @@ class PotentialCustomerScoringModel:
                     early_stopping_rounds=20,  # Earlier stopping for GPU
                     seed=42,
                     shuffle=True,
-                    callbacks=[pruning_callback, lrdecay_callback],
+                    callbacks=[lrdecay_callback],
                     verbose_eval=False,
                 )
                 
