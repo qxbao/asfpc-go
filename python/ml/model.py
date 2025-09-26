@@ -401,6 +401,7 @@ class PotentialCustomerScoringModel:
             "subsample": 0.8,
             "colsample_bytree": 0.8,
         })
+        self.train_params = params
         
         num_boost_round = 500
         
@@ -540,8 +541,7 @@ class PotentialCustomerScoringModel:
             self.test_results = {}
         self.test_results["saved_at"] = datetime.now().isoformat()
         self.test_results["is_gpu"] = self.use_gpu
-        
-        # Convert numpy types to Python native types for JSON serialization
+        self.test_results["train_params"] = self.train_params if hasattr(self, 'train_params') else {}
         metadata = self._convert_numpy_types(self.test_results)
         
         with open(os.path.join(model_dir, "metadata.json"), "w") as f:
