@@ -5,9 +5,10 @@ import os
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import root_mean_squared_error, r2_score
-from sklearn.model_selection import RandomizedSearchCV, train_test_split
+from sklearn.model_selection import train_test_split
 import xgboost as xgb
 import numpy as np
+import optuna
 
 class PotentialCustomerScoringModel:
   model_path = os.path.join(os.getcwd(), "resources", "models")
@@ -155,59 +156,109 @@ class PotentialCustomerScoringModel:
         raise ValueError("Data not loaded. Call load_data first.")
 
     base_params = self._get_base_params()
-    base_params["verbosity"] = 0
-
-    param_grid = {
-        "n_estimators": [300, 500, 800, 1200],
-        "learning_rate": [0.01, 0.05, 0.1, 0.2],
-        "max_depth": [4, 6, 8, 10],
-        "min_child_weight": [1, 3, 5, 7],
-        "subsample": [0.6, 0.8, 1.0],
-        "colsample_bytree": [0.6, 0.8, 1.0],
-        "gamma": [0, 0.1, 0.2, 0.5],
-        "reg_alpha": [0, 0.1, 0.5, 1],
-        "reg_lambda": [0.5, 1, 1.5, 2],
-    }
     
+    # Prepare sample data for optimization
     sample_size = min(9000, len(self.X_train))
     X_sample = self.X_train[:sample_size]
     y_sample = self.y_train[:sample_size]
     
+    def objective(trial):
+        """Optuna objective function for hyperparameter optimization"""
+        try:
+            # Suggest hyperparameters
+            params = base_params.copy()
+            params.update({
+                "verbosity": 0,
+                "eta": trial.suggest_float("eta", 0.01, 0.3, log=True),
+                "max_depth": trial.suggest_int("max_depth", 3, 10),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "gamma": trial.suggest_float("gamma", 0, 0.5),
+                "reg_alpha": trial.suggest_float("reg_alpha", 0, 2.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 2.5),
+            })
+            
+            n_estimators = trial.suggest_int("n_estimators", 100, 1000)
+            
+            # Create DMatrix for training
+            dtrain = xgb.DMatrix(X_sample, label=y_sample)
+            
+            # Perform cross-validation with XGBoost
+            cv_results = xgb.cv(
+                params,
+                dtrain,
+                num_boost_round=n_estimators,
+                nfold=3,
+                metrics=["rmse"],
+                early_stopping_rounds=20,
+                seed=42,
+                shuffle=True,
+                verbose_eval=False,
+                return_train_scores=False
+            )
+            
+            # Return the best validation RMSE (lower is better)
+            best_rmse = cv_results["test-rmse-mean"].min()
+            return best_rmse
+            
+        except Exception as e:
+            self.logger.warning(f"Trial failed: {e}")
+            # Return a high value for failed trials
+            return float('inf')
+    
     try:
-        model = xgb.XGBRegressor(**base_params)
-        search = RandomizedSearchCV(
-            estimator=model,
-            param_distributions=param_grid,
-            n_iter=10,
-            scoring="neg_root_mean_squared_error",
-            cv=3,
-            verbose=1,
-            n_jobs=1,
-            error_score='raise'
+        # Create Optuna study
+        study = optuna.create_study(
+            direction="minimize",
+            study_name=f"xgboost_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            sampler=optuna.samplers.TPESampler(seed=42)
         )
-        search.fit(X_sample, y_sample)
-        best_params = search.best_params_
-        self.logger.info(f"Best params found: {best_params}")
-        return best_params
+        
+        # Optimize hyperparameters
+        study.optimize(
+            objective, 
+            n_trials=30,  # Adjust based on available time/resources
+            timeout=1800,  # 30 minutes timeout
+            show_progress_bar=False
+        )
+        
+        # Get best parameters
+        best_params = study.best_params
+        self.logger.info(f"Optuna optimization completed. Best RMSE: {study.best_value:.4f}")
+        self.logger.info(f"Best parameters: {best_params}")
+        
+        # Convert to format compatible with our training method
+        return {
+            "eta": best_params["eta"],
+            "max_depth": best_params["max_depth"],
+            "min_child_weight": best_params["min_child_weight"],
+            "subsample": best_params["subsample"],
+            "colsample_bytree": best_params["colsample_bytree"],
+            "gamma": best_params["gamma"],
+            "reg_alpha": best_params["reg_alpha"],
+            "reg_lambda": best_params["reg_lambda"],
+            "n_estimators": best_params["n_estimators"],
+        }
         
     except Exception as e:
-        self.logger.warning(f"Auto-tuning failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
+        self.logger.warning(f"Optuna optimization failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
         if self.use_gpu:
-            # Fallback to CPU if GPU auto-tuning fails
-            self.logger.info("Falling back to CPU for auto-tuning")
+            # Fallback to CPU if GPU optimization fails
+            self.logger.info("Falling back to CPU for hyperparameter optimization")
             self.use_gpu = False
             return self.auto_tune()  # Retry with CPU
         else:
-            # Return sensible defaults if CPU auto-tuning also fails
-            self.logger.error("CPU auto-tuning also failed, using default parameters")
+            # Return sensible defaults if CPU optimization also fails
+            self.logger.error("CPU optimization also failed, using default parameters")
             return {
-                "learning_rate": 0.1,
+                "eta": 0.1,
                 "max_depth": 6,
                 "subsample": 0.8,
                 "colsample_bytree": 0.8,
+                "n_estimators": 500,
             }
 
-  
   def train(self, auto_tune: bool = False):
     dtrain = xgb.DMatrix(self.X_train, label=self.y_train)
     dval = xgb.DMatrix(self.X_test, label=self.y_test)
@@ -215,7 +266,7 @@ class PotentialCustomerScoringModel:
     # Start with detected GPU/CPU settings
     params = self._get_base_params()
     params.update({
-        "eta": 0.1,  # learning_rate in xgb.train is called eta
+        "eta": 0.1,
         "max_depth": 6,
         "subsample": 0.8,
         "colsample_bytree": 0.8,
@@ -226,15 +277,13 @@ class PotentialCustomerScoringModel:
     if auto_tune:
         try:
             best_params = self.auto_tune()
-            # Convert XGBRegressor params to xgb.train params
-            if "learning_rate" in best_params:
-                best_params["eta"] = best_params.pop("learning_rate")
+            # Extract n_estimators for xgb.train
             if "n_estimators" in best_params:
                 num_boost_round = best_params.pop("n_estimators")
             params.update(best_params)
-            self.logger.info(f"Using auto-tuned parameters: {best_params}")
+            self.logger.info(f"Using Optuna-tuned parameters: {best_params}")
         except Exception as e:
-            self.logger.warning(f"Auto-tuning failed, using default parameters: {e}")
+            self.logger.warning(f"Optuna tuning failed, using default parameters: {e}")
 
     try:
         self.logger.info(f"Training model with {'GPU' if self.use_gpu else 'CPU'}")
