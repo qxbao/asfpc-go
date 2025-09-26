@@ -28,15 +28,15 @@ func InitLogger(development bool) error {
 	return nil
 }
 
-func GetLogger(loggerName *string) *zap.SugaredLogger {
+func GetLogger(loggerName string) *zap.SugaredLogger {
 	if Logger == nil {
 		logger, _ := zap.NewDevelopment()
 		Logger = logger.Sugar()
 	}
-	if loggerName == nil {
+	if loggerName == "" {
 		return Logger
 	}
-	return Logger.Named(*loggerName)
+	return Logger.Named(loggerName)
 }
 
 func FlushLogger() {

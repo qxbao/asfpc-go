@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"log"
 	"os"
@@ -34,9 +33,6 @@ func (s *Server) start() {
 	}
 	defer logger.FlushLogger()
 
-	configs := s.loadConfigs()
-	s.GlobalConfig = &configs
-
 	s.Cron = &cron.CronService{
 		Server: &s.Server,
 	}
@@ -49,9 +45,7 @@ func (s *Server) start() {
   e.Use(middleware.Recover())
 
 	s.Echo = e
-	if err := s.initRoute(); err != nil {
-		log.Fatal("Failed to initialize routes:", err)
-	}
+	s.initRoute()
 	HOST := os.Getenv("HOST")
 	PORT := os.Getenv("PORT")
 
@@ -84,8 +78,7 @@ func (s *Server) initDB() error {
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		loggerName := "SERVER.GO"
-		logger.GetLogger(&loggerName).Info("Connected to the database successfully!")
+		logger.GetLogger("SERVER.GO").Info("Connected to the database successfully!")
 	}
 
 	s.Database = database
@@ -94,26 +87,10 @@ func (s *Server) initDB() error {
 	return nil
 }
 
-func (s Server) initRoute() error {
+func (s Server) initRoute() {
 	routes.InitAccountRoutes(s.Server)
 	routes.InitDataRoutes(s.Server)
 	routes.InitAnalysisRoutes(s.Server)
 	routes.InitMLRoutes(s.Server)
-	return nil
-}
-
-func (s Server) loadConfigs() map[string]string {
-	config := make(map[string]string)
-	ctx := context.Background()
-	defer ctx.Done()
-	loadedConfigs, err := s.Queries.GetAllConfigs(ctx)
-	if err != nil {
-		loggerName := "loadConfigs"
-		logger.GetLogger(&loggerName).Error("Error loading configs:", err)
-		return config
-	}
-	for _, c := range loadedConfigs {
-		config[c.Key] = c.Value
-	}
-	return config
+	routes.InitSettingRoutes(s.Server)
 }

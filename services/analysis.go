@@ -34,8 +34,7 @@ type AnalysisService struct {
 	Server infras.Server
 }
 
-var anlLoggerName = "AnalysisService"
-var anlLogger = lg.GetLogger(&anlLoggerName)
+var anlLogger = lg.GetLogger("AnalysisService")
 
 func (as *AnalysisService) GetProfiles(c echo.Context) error {
 	queries := as.Server.Queries
@@ -217,7 +216,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 	ctx := context.Background()
 	defer ctx.Done()
 
-	geminiAPILimit := as.Server.GetConfig("GEMINI_API_LIMIT", "15")
+	geminiAPILimit := as.Server.GetConfig(ctx, "GEMINI_API_LIMIT", "15")
 	geminiAPILimitInt, err := strconv.ParseInt(geminiAPILimit, 10, 32)
 
 	if err != nil || geminiAPILimitInt <= 0 {
@@ -416,7 +415,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 	ctx := context.Background()
 	defer ctx.Done()
 
-	limitStr := as.Server.GetConfig("GEMINI_EMBEDDING_LIMIT", "100")
+	limitStr := as.Server.GetConfig(ctx, "GEMINI_EMBEDDING_LIMIT", "100")
 	limit, err := strconv.ParseInt(limitStr, 10, 32)
 
 	if err != nil || limit <= 0 {

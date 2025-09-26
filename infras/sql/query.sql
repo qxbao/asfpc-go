@@ -314,6 +314,15 @@ RETURNING *;
 -- name: GetAllConfigs :many
 SELECT * FROM public.config;
 
+-- name: GetConfigByKey :one
+SELECT * FROM public.config WHERE "key" = $1;
+
+-- name: UpsertConfig :one
+INSERT INTO public.config ("key", "value")
+VALUES ($1, $2)
+ON CONFLICT ("key") DO UPDATE SET "value" = $2
+RETURNING *;
+
 -- name: GetStats :one
 SELECT
   (SELECT COUNT(*) FROM public."group") AS total_groups,

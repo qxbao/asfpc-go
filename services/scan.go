@@ -59,8 +59,7 @@ type processCommentInput struct {
 	PostID    int32
 }
 
-var loggerName string = "ScanningService"
-var logger *zap.SugaredLogger = lg.GetLogger(&loggerName)
+var logger *zap.SugaredLogger = lg.GetLogger("ScanningService")
 
 type GroupScanSuccess struct {
 	AccountID int32
@@ -81,8 +80,8 @@ func (s ScanService) ScanAllGroups() {
 		return
 	}
 
-	groupLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_GROUP_LIMIT", "5"), 10, 32)
-	mainConcurrency, _ := strconv.ParseInt(s.Server.GetConfig("SCAN_MAIN_CONCURRENCY", "2"), 10, 32)
+	groupLimit, _ := strconv.ParseInt(s.Server.GetConfig(ctx, "FACEBOOK_GROUP_LIMIT", "5"), 10, 32)
+	mainConcurrency, _ := strconv.ParseInt(s.Server.GetConfig(ctx, "SCAN_MAIN_CONCURRENCY", "2"), 10, 32)
 
 	mainSemaphore := async.GetSemaphore[processGroupInput, GroupScanSuccess](int(mainConcurrency))
 
@@ -135,7 +134,7 @@ func (s ScanService) processGroups(input processGroupInput) GroupScanSuccess {
 	if err != nil {
 		panic(fmt.Errorf("failed to fetch groups to scan for account %d: %v", input.AccountID, err))
 	}
-	postsConcurrency, _ := strconv.ParseInt(s.Server.GetConfig("SCAN_POSTS_CONCURRENCY", "5"), 10, 32)
+	postsConcurrency, _ := strconv.ParseInt(s.Server.GetConfig(input.Context, "SCAN_POSTS_CONCURRENCY", "5"), 10, 32)
 	semaphore := async.GetSemaphore[processPostsInput, PostScanResult](int(postsConcurrency))
 	for _, group := range groups {
 		semaphore.Assign(s.processPosts, processPostsInput{
@@ -165,7 +164,7 @@ func (s ScanService) processGroups(input processGroupInput) GroupScanSuccess {
 
 func (s ScanService) processPosts(input processPostsInput) PostScanResult {
 	logger.Infof("Scanning posts for group %s (ID: %d)", input.Group.GroupName, input.Group.ID)
-	feedLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_GROUP_FEED_LIMIT", "20"), 10, 32)
+	feedLimit, _ := strconv.ParseInt(s.Server.GetConfig(input.Context, "FACEBOOK_GROUP_FEED_LIMIT", "20"), 10, 32)
 	fg := FacebookGraph{
 		AccessToken: input.Group.AccessToken.String,
 	}
@@ -190,7 +189,7 @@ func (s ScanService) processPosts(input processPostsInput) PostScanResult {
 	}
 
 	s.Server.Queries.UpdateGroupScannedAt(input.Context, input.Group.ID)
-	postConcurrency, _ := strconv.ParseInt(s.Server.GetConfig("SCAN_POST_CONCURRENCY", "5"), 10, 32)
+	postConcurrency, _ := strconv.ParseInt(s.Server.GetConfig(input.Context, "SCAN_POST_CONCURRENCY", "5"), 10, 32)
 	semaphore := async.GetSemaphore[processPostInput, bool](int(postConcurrency))
 
 	for _, post := range *posts.Data {
@@ -247,9 +246,9 @@ func (s ScanService) processPost(input processPostInput) bool {
 	})
 
 	if input.Post.Comments != nil && input.Post.Comments.Data != nil {
-		commentConcurrency, _ := strconv.ParseInt(s.Server.GetConfig("SCAN_COMMENT_CONCURRENCY", "5"), 10, 32)
+		commentConcurrency, _ := strconv.ParseInt(s.Server.GetConfig(input.Context, "SCAN_COMMENT_CONCURRENCY", "5"), 10, 32)
 		semaphore := async.GetSemaphore[processCommentInput, bool](int(commentConcurrency))
-		commentsLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_COMMENTS_LIMIT", "15"), 10, 32)
+		commentsLimit, _ := strconv.ParseInt(s.Server.GetConfig(input.Context, "FACEBOOK_COMMENTS_LIMIT", "15"), 10, 32)
 		for i, comment := range *input.Post.Comments.Data {
 			if i >= int(commentsLimit) {
 				break
@@ -332,7 +331,7 @@ func (s ScanService) ScanAllProfiles() {
 	ctx, ctx_cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer ctx_cancel()
 
-	profileLimit, _ := strconv.ParseInt(s.Server.GetConfig("FACEBOOK_PROFILE_SCAN_LIMIT", "80"), 10, 32)
+	profileLimit, _ := strconv.ParseInt(s.Server.GetConfig(ctx, "FACEBOOK_PROFILE_SCAN_LIMIT", "80"), 10, 32)
 	profiles, err := s.Server.Queries.GetProfilesToScan(ctx, int32(profileLimit))
 
 	if err != nil {
@@ -341,7 +340,7 @@ func (s ScanService) ScanAllProfiles() {
 	}
 	logger.Infof("Fetched %d profiles to scan", len(profiles))
 
-	profileConcurrency, _ := strconv.ParseInt(s.Server.GetConfig("SCAN_PROFILE_CONCURRENCY", "5"), 10, 32)
+	profileConcurrency, _ := strconv.ParseInt(s.Server.GetConfig(ctx, "SCAN_PROFILE_CONCURRENCY", "5"), 10, 32)
 	semaphore := async.GetSemaphore[processProfileInput, bool](int(profileConcurrency))
 
 	for _, profile := range profiles {

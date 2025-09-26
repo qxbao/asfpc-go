@@ -187,8 +187,8 @@ class PotentialCustomerScoringModel:
                 # GPU-specific optimizations
                 if self.use_gpu:
                     params.update({
+                        "device": "cuda:0",
                         "max_bin": 256,
-                        "gpu_id": 0,
                         "single_precision_histogram": True,
                     })
                 
@@ -220,7 +220,6 @@ class PotentialCustomerScoringModel:
                 
                 best_rmse = cv_results["test-rmse-mean"].min()
                 
-                # Force garbage collection to free GPU memory
                 if self.use_gpu:
                     import gc
                     del dtrain
@@ -230,7 +229,6 @@ class PotentialCustomerScoringModel:
                   
             except Exception as e:
                 self.logger.warning(f"Trial failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
-                # If GPU trial fails, try to free memory and continue
                 if self.use_gpu:
                     import gc
                     gc.collect()

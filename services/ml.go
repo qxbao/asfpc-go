@@ -33,6 +33,12 @@ func (s *MLService) Train(c echo.Context) error {
 		*dto.ModelName = "Model_" + time.Now().Format("20060102150405")
 	}
 
+	if len(*dto.ModelName) < 3 {
+		return c.JSON(400, map[string]any{
+			"error": "Model name must be at least 3 characters long",
+		})
+	}
+
 	if dto.AutoTune == nil {
 		dto.AutoTune = new(bool)
 		*dto.AutoTune = false

@@ -633,6 +633,17 @@ func (q *Queries) GetCommentsToScan(ctx context.Context, arg GetCommentsToScanPa
 	return items, nil
 }
 
+const getConfigByKey = `-- name: GetConfigByKey :one
+SELECT id, key, value FROM public.config WHERE "key" = $1
+`
+
+func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getConfigByKey, key)
+	var i Config
+	err := row.Scan(&i.ID, &i.Key, &i.Value)
+	return i, err
+}
+
 const getGeminiKeyForUse = `-- name: GetGeminiKeyForUse :one
 SELECT id, api_key, token_used FROM public.gemini_key WHERE token_used = (
   SELECT MIN(token_used) FROM public.gemini_key
@@ -1884,5 +1895,24 @@ func (q *Queries) UpdateProfileScanStatus(ctx context.Context, id int32) (UserPr
 		&i.Phone,
 		&i.ProfileUrl,
 	)
+	return i, err
+}
+
+const upsertConfig = `-- name: UpsertConfig :one
+INSERT INTO public.config ("key", "value")
+VALUES ($1, $2)
+ON CONFLICT ("key") DO UPDATE SET "value" = $2
+RETURNING id, key, value
+`
+
+type UpsertConfigParams struct {
+	Key   string
+	Value string
+}
+
+func (q *Queries) UpsertConfig(ctx context.Context, arg UpsertConfigParams) (Config, error) {
+	row := q.db.QueryRowContext(ctx, upsertConfig, arg.Key, arg.Value)
+	var i Config
+	err := row.Scan(&i.ID, &i.Key, &i.Value)
 	return i, err
 }
