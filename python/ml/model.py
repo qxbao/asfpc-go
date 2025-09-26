@@ -31,6 +31,11 @@ class PotentialCustomerScoringModel:
         self.logger = logging.getLogger(__name__)
         self.device_type, self.device_id = self._detect_best_device()
 
+    @property
+    def use_gpu(self) -> bool:
+        """Backward compatibility property - returns True if using GPU-accelerated compute"""
+        return self.device_type in ["cuda", "opencl"]
+
     def _get_gpu_info(self) -> str:
         """Get GPU information for logging"""
         try:
@@ -49,9 +54,7 @@ class PotentialCustomerScoringModel:
 
     def _detect_best_device(self) -> tuple[str, str]:
         """Detect the best available compute device (CUDA > OpenCL > CPU)"""
-        # Try CUDA first
         try:
-            # Test CUDA availability
             test_dmatrix = xgb.DMatrix(np.random.rand(10, 5))
             test_params = {"device": "cuda:0", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
             xgb.train(test_params, test_dmatrix, num_boost_round=1, verbose_eval=False)
@@ -60,7 +63,6 @@ class PotentialCustomerScoringModel:
         except Exception as e:
             self.logger.debug(f"CUDA not available: {e}")
 
-        # Try OpenCL
         try:
             import pyopencl as cl
             platforms = cl.get_platforms()
@@ -91,13 +93,13 @@ class PotentialCustomerScoringModel:
                 if best_device:
                     # Test OpenCL with XGBoost
                     test_dmatrix = xgb.DMatrix(np.random.rand(10, 5))
-                    test_params = {"device": "opencl:0", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
+                    test_params = {"device": "gpu", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
                     xgb.train(test_params, test_dmatrix, num_boost_round=1, verbose_eval=False)
                     
                     device_name = best_device.name.strip()
                     device_type_str = "GPU" if best_device.type == cl.device_type.GPU else "CPU" if best_device.type == cl.device_type.CPU else "ACCELERATOR"
                     self.logger.info(f"OpenCL {device_type_str} detected: {device_name}")
-                    return "opencl", "opencl:0"
+                    return "opencl", "gpu"
         except Exception as e:
             self.logger.debug(f"OpenCL not available: {e}")
 
@@ -186,25 +188,29 @@ class PotentialCustomerScoringModel:
         self.y_test = test_df[label_col].values.astype(np.float32)
 
     def _get_base_params(self) -> dict:
-        """Get base parameters with automatic GPU/CPU selection"""
+        """Get base parameters with automatic device selection"""
         base = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
-            "tree_method": "hist",  # Modern parameter for both CPU and GPU
+            "tree_method": "hist",  # Default for CPU
             "seed": 42,
         }
-        if self.use_gpu:
-            base["device"] = "cuda:0"
+        
+        # Configure based on detected device
+        base["device"] = self.device_id
+        
+        if self.device_type in ["cuda", "opencl"]:
             base["tree_method"] = "gpu_hist"
             base.update({
                 "max_bin": 256,
                 "single_precision_histogram": True,
             })
-            self.logger.info("Using GPU-optimized parameters (cuda:0, gpu_hist, max_bin=256)")
+            device_name = "CUDA" if self.device_type == "cuda" else "OpenCL"
+            self.logger.info(f"Using {device_name} GPU-optimized parameters ({self.device_id}, gpu_hist, max_bin=256)")
         else:
-            base["device"] = "cpu"
-            base["tree_method"] = "hist"  # Ensure CPU uses hist method
-            self.logger.info("Using CPU parameters (cpu, hist)")
+            base["tree_method"] = "hist"  # CPU uses hist method
+            self.logger.info(f"Using CPU parameters ({self.device_id}, hist)")
+        
         return base
 
     def auto_tune(self):
@@ -355,7 +361,7 @@ class PotentialCustomerScoringModel:
                 self.logger.info("GPU optimization failed, falling back to CPU for hyperparameter optimization")
                 import gc
                 gc.collect()
-                self.use_gpu = False
+                self.device_type, self.device_id = "cpu", "cpu"
                 return self.auto_tune()
             else:
                 self.logger.error("CPU optimization also failed, using default parameters")
@@ -413,7 +419,7 @@ class PotentialCustomerScoringModel:
             if self.use_gpu:
                 self.logger.warning(f"GPU training failed: {e}")
                 self.logger.info("Falling back to CPU training")
-                self.use_gpu = False
+                self.device_type, self.device_id = "cpu", "cpu"
                 params.update(self._get_base_params())
                 
                 self.model = xgb.train(
