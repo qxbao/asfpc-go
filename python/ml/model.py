@@ -408,6 +408,7 @@ class PotentialCustomerScoringModel:
         if not hasattr(self, 'test_results'):
             self.test_results = {}
         self.test_results["saved_at"] = datetime.now().isoformat()
+        self.test_results["is_gpu"] = self.is_gpu
         
         # Convert numpy types to Python native types for JSON serialization
         metadata = self._convert_numpy_types(self.test_results)
