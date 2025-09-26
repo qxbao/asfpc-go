@@ -30,25 +30,96 @@ class PotentialCustomerScoringModel:
         
         self.use_gpu = self._detect_gpu_availability()
         if self.use_gpu:
-            self.logger.info("GPU detected - will use GPU acceleration")
+            gpu_info = self._get_gpu_info()
+            self.logger.info(f"GPU detected - will use GPU acceleration. {gpu_info}")
         else:
             self.logger.info("GPU not available - using CPU fallback")
 
     def _detect_gpu_availability(self) -> bool:
         """Detect if GPU is available for XGBoost training"""
         try:
-            test_data = xgb.DMatrix(np.random.rand(10, 5), label=np.random.rand(10))
+            # First check if CUDA is available
+            import subprocess
+            import os
+            
+            # Check NVIDIA-SMI command
+            try:
+                result = subprocess.run(['nvidia-smi'], capture_output=True, text=True, timeout=10)
+                if result.returncode != 0:
+                    self.logger.debug("nvidia-smi command failed - no NVIDIA GPU detected")
+                    return False
+            except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+                self.logger.debug("nvidia-smi not found or failed - no NVIDIA GPU detected")
+                return False
+            
+            # Check if CUDA environment variables are set
+            cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+            if cuda_visible_devices == '-1' or cuda_visible_devices == '':
+                # Try to set a default GPU
+                os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+            
+            # Test XGBoost GPU functionality with proper parameters
+            test_data = xgb.DMatrix(np.random.rand(100, 10).astype(np.float32), 
+                                  label=np.random.rand(100).astype(np.float32))
+            
             test_params = {
                 "objective": "reg:squarederror",
-                "tree_method": "hist",
-                "device": "cuda",
-                "verbosity": 0
+                "tree_method": "gpu_hist",  # Use gpu_hist instead of hist
+                "device": "cuda:0",         # Specify CUDA device explicitly
+                "gpu_id": 0,               # Explicit GPU ID
+                "verbosity": 0,
+                "max_depth": 3,            # Simple params for test
+                "n_estimators": 1
             }
-            xgb.train(test_params, test_data, num_boost_round=1, verbose_eval=False)
+            
+            # Try to train a small model
+            model = xgb.train(test_params, test_data, num_boost_round=1, verbose_eval=False)
+            
+            # Test prediction on GPU
+            predictions = model.predict(test_data)
+            
+            # Clean up
+            del model, test_data, predictions
+            
+            self.logger.info("GPU detection successful - XGBoost can use CUDA")
             return True
-        except (xgb.core.XGBoostError, Exception) as e:
-            self.logger.debug(f"GPU detection failed: {e}")
+            
+        except ImportError as e:
+            self.logger.debug(f"Missing dependencies for GPU detection: {e}")
             return False
+        except xgb.core.XGBoostError as e:
+            error_msg = str(e).lower()
+            if 'cuda' in error_msg or 'gpu' in error_msg:
+                self.logger.debug(f"XGBoost GPU error: {e}")
+            else:
+                self.logger.debug(f"XGBoost error (non-GPU related): {e}")
+            return False
+        except Exception as e:
+            self.logger.debug(f"GPU detection failed with unexpected error: {e}")
+            return False
+
+    def _get_gpu_info(self) -> str:
+        """Get GPU information for logging"""
+        try:
+            import subprocess
+            result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,memory.free', 
+                                   '--format=csv,noheader,nounits'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                if lines and lines[0]:
+                    gpu_name, total_mem, free_mem = lines[0].split(', ')
+                    return f"GPU: {gpu_name}, Total Memory: {total_mem}MB, Free Memory: {free_mem}MB"
+            return "GPU information not available"
+        except Exception:
+            return "GPU information not available"
+
+    def force_gpu_mode(self, use_gpu: bool = True):
+        """Force enable/disable GPU mode (useful for debugging)"""
+        if use_gpu and not self._detect_gpu_availability():
+            self.logger.warning("GPU mode forced but GPU not available - this may cause errors")
+        self.use_gpu = use_gpu
+        self.logger.info(f"GPU mode {'enabled' if use_gpu else 'disabled'} (forced)")
 
     def _validate_embedding(self, emb):
         try:
@@ -139,9 +210,18 @@ class PotentialCustomerScoringModel:
             "seed": 42,
         }
         if self.use_gpu:
-            base["device"] = "cuda"
+            base.update({
+                "device": "cuda:0",
+                "tree_method": "gpu_hist",
+                "gpu_id": 0,  # Explicitly specify GPU ID
+                "max_bin": 256,  # Optimize GPU memory usage
+                "single_precision_histogram": True,  # Use float32 for memory efficiency
+            })
+            self.logger.info("Using GPU-optimized parameters (cuda:0, gpu_hist, max_bin=256)")
         else:
             base["device"] = "cpu"
+            base["tree_method"] = "hist"  # Ensure CPU uses hist method
+            self.logger.info("Using CPU parameters (cpu, hist)")
         return base
 
     def auto_tune(self):
@@ -150,7 +230,15 @@ class PotentialCustomerScoringModel:
 
         base_params = self._get_base_params()
         
-        sample_size = min(12000, len(self.X_train))
+        # Reduce sample size for GPU memory optimization
+        # GPU memory is more limited than RAM
+        if self.use_gpu:
+            sample_size = min(8000, len(self.X_train))  # Smaller sample for GPU
+            self.logger.info(f"Using GPU optimization with {sample_size} samples")
+        else:
+            sample_size = min(12000, len(self.X_train))
+            self.logger.info(f"Using CPU optimization with {sample_size} samples")
+            
         X_sample = self.X_train[:sample_size]
         y_sample = self.y_train[:sample_size]
         
@@ -173,9 +261,21 @@ class PotentialCustomerScoringModel:
                     "lr_decay": trial.suggest_float("lr_decay", 0.8, 1)
                 })
                 
-                n_estimators = trial.suggest_int("n_estimators", 100, 800)
+                # GPU-specific optimizations
+                if self.use_gpu:
+                    params.update({
+                        "max_bin": 256,
+                        "gpu_id": 0,
+                        "single_precision_histogram": True,
+                    })
                 
-                dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)  # Optimized for hist binning on GPU
+                n_estimators = trial.suggest_int("n_estimators", 100, 500)  # Reduced for faster GPU trials
+                
+                # Use DMatrix instead of QuantileDMatrix for better GPU compatibility
+                if self.use_gpu:
+                    dtrain = xgb.DMatrix(X_sample, label=y_sample, enable_categorical=False)
+                else:
+                    dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)
                 
                 pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
                 lrdecay_callback = xgb.callback.LearningRateScheduler(
@@ -186,9 +286,9 @@ class PotentialCustomerScoringModel:
                     params,
                     dtrain,
                     num_boost_round=n_estimators,
-                    nfold=5,
+                    nfold=5 if self.use_gpu else 5,  # Reduce folds for GPU to save memory
                     metrics=["rmse"],
-                    early_stopping_rounds=20,
+                    early_stopping_rounds=20,  # Earlier stopping for GPU
                     seed=42,
                     shuffle=True,
                     callbacks=[pruning_callback, lrdecay_callback],
@@ -196,40 +296,63 @@ class PotentialCustomerScoringModel:
                 )
                 
                 best_rmse = cv_results["test-rmse-mean"].min()
+                
+                # Force garbage collection to free GPU memory
+                if self.use_gpu:
+                    import gc
+                    del dtrain
+                    gc.collect()
+                    
                 return best_rmse
                   
             except Exception as e:
-                self.logger.warning(f"Trial failed: {e}")
+                self.logger.warning(f"Trial failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
+                # If GPU trial fails, try to free memory and continue
+                if self.use_gpu:
+                    import gc
+                    gc.collect()
                 return float('inf')
         
         try:
+            # Adjust optimization strategy based on GPU/CPU
+            n_trials = 50 if self.use_gpu else 100  # Fewer trials for GPU to manage memory
+            timeout = 3600 if self.use_gpu else 7200  # Shorter timeout for GPU
+            
             study = optuna.create_study(
                 direction="minimize",
-                study_name=f"xgboost_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                study_name=f"xgboost_tuning_{'gpu' if self.use_gpu else 'cpu'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 sampler=optuna.samplers.TPESampler(
                     seed=42,
-                    n_startup_trials=10,
-                    n_ei_candidates=24,
+                    n_startup_trials=8 if self.use_gpu else 10,
+                    n_ei_candidates=16 if self.use_gpu else 24,
                     multivariate=True,
                     group=True,
                 ),
                 pruner=optuna.pruners.MedianPruner(
-                    n_startup_trials=5,
-                    n_warmup_steps=10,
-                    interval_steps=5
+                    n_startup_trials=3 if self.use_gpu else 5,
+                    n_warmup_steps=8 if self.use_gpu else 10,
+                    interval_steps=3 if self.use_gpu else 5
                 ),
             )
             
+            self.logger.info(f"Starting {'GPU' if self.use_gpu else 'CPU'} optimization with {n_trials} trials, timeout {timeout}s")
+            
             study.optimize(
                 objective, 
-                n_trials=100,
-                timeout=7200,
-                show_progress_bar=False
+                n_trials=n_trials,
+                timeout=timeout,
+                show_progress_bar=False,
+                gc_after_trial=True if self.use_gpu else False,  # Force garbage collection for GPU
             )
             
             best_params = study.best_params
-            self.logger.info(f"Optuna optimization completed. Best RMSE: {study.best_value:.4f}")
+            self.logger.info(f"Optuna {'GPU' if self.use_gpu else 'CPU'} optimization completed. Best RMSE: {study.best_value:.4f}")
             self.logger.info(f"Best parameters: {best_params}")
+            
+            # Clean up GPU memory after optimization
+            if self.use_gpu:
+                import gc
+                gc.collect()
             
             return {
                 "eta": best_params["eta"],
@@ -246,7 +369,10 @@ class PotentialCustomerScoringModel:
         except Exception as e:
             self.logger.warning(f"Optuna optimization failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
             if self.use_gpu:
-                self.logger.info("Falling back to CPU for hyperparameter optimization")
+                self.logger.info("GPU optimization failed, falling back to CPU for hyperparameter optimization")
+                # Clean up GPU memory before fallback
+                import gc
+                gc.collect()
                 self.use_gpu = False
                 return self.auto_tune()
             else:
@@ -260,8 +386,13 @@ class PotentialCustomerScoringModel:
                 }
 
     def train(self, auto_tune: bool = False):
-        dtrain = xgb.QuantileDMatrix(self.X_train, label=self.y_train)  # Optimized for GPU hist
-        dval = xgb.DMatrix(self.X_test, label=self.y_test)
+        # Use appropriate DMatrix type based on GPU/CPU usage
+        if self.use_gpu:
+            dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
+            dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
+        else:
+            dtrain = xgb.QuantileDMatrix(self.X_train, label=self.y_train)
+            dval = xgb.DMatrix(self.X_test, label=self.y_test)
 
         params = self._get_base_params()
         params.update({
