@@ -27,76 +27,7 @@ class PotentialCustomerScoringModel:
         self.scaler = None
         self.embedding_dim = 768
         self.logger = logging.getLogger(__name__)
-        
-        self.use_gpu = self._detect_gpu_availability()
-        if self.use_gpu:
-            gpu_info = self._get_gpu_info()
-            self.logger.info(f"GPU detected - will use GPU acceleration. {gpu_info}")
-        else:
-            self.logger.info("GPU not available - using CPU fallback")
-
-    def _detect_gpu_availability(self) -> bool:
-        """Detect if GPU is available for XGBoost training"""
-        try:
-            # First check if CUDA is available
-            import subprocess
-            import os
-            
-            # Check NVIDIA-SMI command
-            try:
-                result = subprocess.run(['nvidia-smi'], capture_output=True, text=True, timeout=10)
-                if result.returncode != 0:
-                    self.logger.debug("nvidia-smi command failed - no NVIDIA GPU detected")
-                    return False
-            except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
-                self.logger.debug("nvidia-smi not found or failed - no NVIDIA GPU detected")
-                return False
-            
-            # Check if CUDA environment variables are set
-            cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
-            if cuda_visible_devices == '-1' or cuda_visible_devices == '':
-                # Try to set a default GPU
-                os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-            
-            # Test XGBoost GPU functionality with proper parameters
-            test_data = xgb.DMatrix(np.random.rand(100, 10).astype(np.float32), 
-                                  label=np.random.rand(100).astype(np.float32))
-            
-            test_params = {
-                "objective": "reg:squarederror",
-                "tree_method": "gpu_hist",  # Use gpu_hist instead of hist
-                "device": "cuda:0",         # Specify CUDA device explicitly
-                "gpu_id": 0,               # Explicit GPU ID
-                "verbosity": 0,
-                "max_depth": 3,            # Simple params for test
-                "n_estimators": 1
-            }
-            
-            # Try to train a small model
-            model = xgb.train(test_params, test_data, num_boost_round=1, verbose_eval=False)
-            
-            # Test prediction on GPU
-            predictions = model.predict(test_data)
-            
-            # Clean up
-            del model, test_data, predictions
-            
-            self.logger.info("GPU detection successful - XGBoost can use CUDA")
-            return True
-            
-        except ImportError as e:
-            self.logger.debug(f"Missing dependencies for GPU detection: {e}")
-            return False
-        except xgb.core.XGBoostError as e:
-            error_msg = str(e).lower()
-            if 'cuda' in error_msg or 'gpu' in error_msg:
-                self.logger.debug(f"XGBoost GPU error: {e}")
-            else:
-                self.logger.debug(f"XGBoost error (non-GPU related): {e}")
-            return False
-        except Exception as e:
-            self.logger.debug(f"GPU detection failed with unexpected error: {e}")
-            return False
+        self.use_gpu = True
 
     def _get_gpu_info(self) -> str:
         """Get GPU information for logging"""
@@ -113,13 +44,6 @@ class PotentialCustomerScoringModel:
             return "GPU information not available"
         except Exception:
             return "GPU information not available"
-
-    def force_gpu_mode(self, use_gpu: bool = True):
-        """Force enable/disable GPU mode (useful for debugging)"""
-        if use_gpu and not self._detect_gpu_availability():
-            self.logger.warning("GPU mode forced but GPU not available - this may cause errors")
-        self.use_gpu = use_gpu
-        self.logger.info(f"GPU mode {'enabled' if use_gpu else 'disabled'} (forced)")
 
     def _validate_embedding(self, emb):
         try:
@@ -210,12 +134,11 @@ class PotentialCustomerScoringModel:
             "seed": 42,
         }
         if self.use_gpu:
+            base["device"] = "cuda:0"
+            base["tree_method"] = "gpu_hist"
             base.update({
-                "device": "cuda:0",
-                "tree_method": "gpu_hist",
-                "gpu_id": 0,  # Explicitly specify GPU ID
-                "max_bin": 256,  # Optimize GPU memory usage
-                "single_precision_histogram": True,  # Use float32 for memory efficiency
+                "max_bin": 256,
+                "single_precision_histogram": True,
             })
             self.logger.info("Using GPU-optimized parameters (cuda:0, gpu_hist, max_bin=256)")
         else:
@@ -370,7 +293,6 @@ class PotentialCustomerScoringModel:
             self.logger.warning(f"Optuna optimization failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
             if self.use_gpu:
                 self.logger.info("GPU optimization failed, falling back to CPU for hyperparameter optimization")
-                # Clean up GPU memory before fallback
                 import gc
                 gc.collect()
                 self.use_gpu = False
