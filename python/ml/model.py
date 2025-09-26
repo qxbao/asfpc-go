@@ -174,6 +174,7 @@ class PotentialCustomerScoringModel:
                     "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
                     "grow_policy": trial.suggest_categorical("grow_policy", ["depthwise", "lossguide"]),
                     "verbosity": 0,
+                    "nthread": trial.suggest_int("nthread", 1, 8),
                     "eta": trial.suggest_float("eta", 0.03, 0.2, log=True),
                     "max_depth": trial.suggest_int("max_depth", 4, 9),
                     "min_child_weight": trial.suggest_int("min_child_weight", 1, 6),
@@ -184,7 +185,7 @@ class PotentialCustomerScoringModel:
                     "reg_lambda": trial.suggest_float("reg_lambda", 0.8, 2.0),
                     "lr_decay": trial.suggest_float("lr_decay", 0.8, 1)
                 })
-                
+                self.logger.info(f"Trial parameters: {params}")
                 # GPU-specific optimizations
                 if self.use_gpu:
                     params.update({
