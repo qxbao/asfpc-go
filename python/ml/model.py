@@ -8,17 +8,9 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
-from xgboost.callback import LearningRateScheduler, TrainingCallback
+from xgboost.callback import LearningRateScheduler
 import numpy as np
 import optuna
-
-class LoggingCallback(TrainingCallback):
-    def __init__(self, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-
-    def after_iteration(self, model, epoch, evals_log):
-        self.logger.info(f"[{epoch}] {evals_log}")
-        return False
 
 class PotentialCustomerScoringModel:
     model_path = os.path.join(os.getcwd(), "resources", "models")
@@ -213,7 +205,6 @@ class PotentialCustomerScoringModel:
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
                 
-                logging_callback = LoggingCallback(logger=self.logger)
 
                 cv_results = xgb.cv(
                     params,
@@ -224,7 +215,7 @@ class PotentialCustomerScoringModel:
                     early_stopping_rounds=20,  # Earlier stopping for GPU
                     seed=42,
                     shuffle=True,
-                    callbacks=[lrdecay_callback, logging_callback],
+                    callbacks=[lrdecay_callback],
                     verbose_eval=False,
                 )
                 
