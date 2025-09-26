@@ -2,6 +2,7 @@
 Main module for the Python service.
 """
 import asyncio
+import datetime
 import logging
 import sys
 from dotenv import load_dotenv
@@ -11,6 +12,16 @@ from database.database import Database
 from utils.navigator import TaskNavigator
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+# Ensure logs directory exists
+logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(logs_dir, exist_ok=True)
+
+logging.basicConfig(
+  level=logging.INFO,
+  format="%(asctime)s [%(levelname)s] %(message)s",
+  filemode="w",
+  filename=os.path.join(logs_dir, f"{datetime.datetime.now().isoformat().replace(':', '-')}.log"),
+)
 
 class MainProcess:
   def __init__(self):

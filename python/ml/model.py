@@ -29,12 +29,7 @@ class PotentialCustomerScoringModel:
         self.scaler = None
         self.embedding_dim = 768
         self.logger = logging.getLogger(__name__)
-        self.device_type, self.device_id = self._detect_best_device()
-
-    @property
-    def use_gpu(self) -> bool:
-        """Backward compatibility property - returns True if using GPU-accelerated compute"""
-        return self.device_type in ["cuda", "opencl"]
+        self.use_gpu = True
 
     def _get_gpu_info(self) -> str:
         """Get GPU information for logging"""
@@ -51,61 +46,6 @@ class PotentialCustomerScoringModel:
             return "GPU information not available"
         except Exception:
             return "GPU information not available"
-
-    def _detect_best_device(self) -> tuple[str, str]:
-        """Detect the best available compute device (CUDA > OpenCL > CPU)"""
-        try:
-            test_dmatrix = xgb.DMatrix(np.random.rand(10, 5))
-            test_params = {"device": "cuda:0", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
-            xgb.train(test_params, test_dmatrix, num_boost_round=1, verbose_eval=False)
-            self.logger.info("CUDA GPU detected and working")
-            return "cuda", "cuda:0"
-        except Exception as e:
-            self.logger.debug(f"CUDA not available: {e}")
-
-        try:
-            import pyopencl as cl
-            platforms = cl.get_platforms()
-            if platforms:
-                # Find the best OpenCL device (prefer GPU)
-                best_device = None
-                best_score = 0
-                
-                for platform in platforms:
-                    devices = platform.get_devices()
-                    for device in devices:
-                        score = 0
-                        if device.type == cl.device_type.GPU:
-                            score += 100
-                        elif device.type == cl.device_type.ACCELERATOR:  
-                            score += 50
-                        elif device.type == cl.device_type.CPU:
-                            score += 10
-                        
-                        # Prefer higher compute units and memory
-                        score += device.max_compute_units
-                        score += min(device.max_mem_alloc_size // (1024**3), 10)  # GB bonus
-                        
-                        if score > best_score:
-                            best_score = score
-                            best_device = device
-                
-                if best_device:
-                    # Test OpenCL with XGBoost
-                    test_dmatrix = xgb.DMatrix(np.random.rand(10, 5))
-                    test_params = {"device": "gpu", "tree_method": "gpu_hist", "objective": "reg:squarederror"}
-                    xgb.train(test_params, test_dmatrix, num_boost_round=1, verbose_eval=False)
-                    
-                    device_name = best_device.name.strip()
-                    device_type_str = "GPU" if best_device.type == cl.device_type.GPU else "CPU" if best_device.type == cl.device_type.CPU else "ACCELERATOR"
-                    self.logger.info(f"OpenCL {device_type_str} detected: {device_name}")
-                    return "opencl", "gpu"
-        except Exception as e:
-            self.logger.debug(f"OpenCL not available: {e}")
-
-        # Fallback to CPU
-        self.logger.info("Using CPU for computation")
-        return "cpu", "cpu"
 
     def _validate_embedding(self, emb):
         try:
@@ -188,29 +128,25 @@ class PotentialCustomerScoringModel:
         self.y_test = test_df[label_col].values.astype(np.float32)
 
     def _get_base_params(self) -> dict:
-        """Get base parameters with automatic device selection"""
+        """Get base parameters with automatic GPU/CPU selection"""
         base = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
-            "tree_method": "hist",  # Default for CPU
+            "tree_method": "hist",  # Modern parameter for both CPU and GPU
             "seed": 42,
         }
-        
-        # Configure based on detected device
-        base["device"] = self.device_id
-        
-        if self.device_type in ["cuda", "opencl"]:
+        if self.use_gpu:
+            base["device"] = "cuda:0"
             base["tree_method"] = "gpu_hist"
             base.update({
                 "max_bin": 256,
                 "single_precision_histogram": True,
             })
-            device_name = "CUDA" if self.device_type == "cuda" else "OpenCL"
-            self.logger.info(f"Using {device_name} GPU-optimized parameters ({self.device_id}, gpu_hist, max_bin=256)")
+            self.logger.info("Using GPU-optimized parameters (cuda:0, gpu_hist, max_bin=256)")
         else:
-            base["tree_method"] = "hist"  # CPU uses hist method
-            self.logger.info(f"Using CPU parameters ({self.device_id}, hist)")
-        
+            base["device"] = "cpu"
+            base["tree_method"] = "hist"  # Ensure CPU uses hist method
+            self.logger.info("Using CPU parameters (cpu, hist)")
         return base
 
     def auto_tune(self):
@@ -253,11 +189,10 @@ class PotentialCustomerScoringModel:
                 # GPU-specific optimizations
                 if self.use_gpu:
                     params.update({
-                        "device": "gpu",
+                        "device": "cuda:0",
                         "max_bin": 256,
                         "single_precision_histogram": True,
                     })
-            
                 
                 n_estimators = trial.suggest_int("n_estimators", 100, 500)  # Reduced for faster GPU trials
                 
@@ -268,6 +203,11 @@ class PotentialCustomerScoringModel:
                     dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)
                 
                 pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
+                # Fallback for different XGBoost versions that may use different metric keys
+                try:
+                  pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
+                except Exception:
+                  pruning_callback = XGBoostPruningCallback(trial, "test-rmse")
                 lrdecay_callback = LearningRateScheduler(
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
@@ -283,10 +223,14 @@ class PotentialCustomerScoringModel:
                     shuffle=True,
                     callbacks=[pruning_callback, lrdecay_callback],
                     verbose_eval=False,
-                    as_pandas=True
                 )
                 
-                best_rmse = cv_results["test-rmse-mean"].min() # type: ignore
+                # Handle case where cv_results["test-rmse-mean"] might be a single value or Series
+                rmse_values = cv_results["test-rmse-mean"]
+                if hasattr(rmse_values, 'min'):
+                    best_rmse = rmse_values.min() # type: ignore
+                else:
+                    best_rmse = float(rmse_values) # type: ignore
                 
                 if self.use_gpu:
                     import gc
@@ -361,7 +305,7 @@ class PotentialCustomerScoringModel:
                 self.logger.info("GPU optimization failed, falling back to CPU for hyperparameter optimization")
                 import gc
                 gc.collect()
-                self.device_type, self.device_id = "cpu", "cpu"
+                self.use_gpu = False
                 return self.auto_tune()
             else:
                 self.logger.error("CPU optimization also failed, using default parameters")
@@ -373,7 +317,7 @@ class PotentialCustomerScoringModel:
                     "n_estimators": 500,
                 }
 
-    def train(self, auto_tune: bool = False):
+    def train(self, auto_tune: bool = True):
         # Use appropriate DMatrix type based on GPU/CPU usage
         if self.use_gpu:
             dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
@@ -419,7 +363,7 @@ class PotentialCustomerScoringModel:
             if self.use_gpu:
                 self.logger.warning(f"GPU training failed: {e}")
                 self.logger.info("Falling back to CPU training")
-                self.device_type, self.device_id = "cpu", "cpu"
+                self.use_gpu = False
                 params.update(self._get_base_params())
                 
                 self.model = xgb.train(
