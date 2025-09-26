@@ -150,7 +150,7 @@ class PotentialCustomerScoringModel:
 
         base_params = self._get_base_params()
         
-        sample_size = min(9000, len(self.X_train))
+        sample_size = min(12000, len(self.X_train))
         X_sample = self.X_train[:sample_size]
         y_sample = self.y_train[:sample_size]
         
@@ -170,6 +170,7 @@ class PotentialCustomerScoringModel:
                     "gamma": trial.suggest_float("gamma", 0, 0.3),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0, 1.0),
                     "reg_lambda": trial.suggest_float("reg_lambda", 0.8, 2.0),
+                    "lr_decay": trial.suggest_float("lr_decay", 0.8, 1)
                 })
                 
                 n_estimators = trial.suggest_int("n_estimators", 100, 800)
@@ -177,7 +178,10 @@ class PotentialCustomerScoringModel:
                 dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)  # Optimized for hist binning on GPU
                 
                 pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
-                
+                lrdecay_callback = xgb.callback.LearningRateScheduler(
+                    lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
+                )
+
                 cv_results = xgb.cv(
                     params,
                     dtrain,
@@ -187,7 +191,7 @@ class PotentialCustomerScoringModel:
                     early_stopping_rounds=20,
                     seed=42,
                     shuffle=True,
-                    callbacks=[pruning_callback],
+                    callbacks=[pruning_callback, lrdecay_callback],
                     verbose_eval=False,
                 )
                 
