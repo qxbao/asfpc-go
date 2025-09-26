@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 import xgboost as xgb
 import numpy as np
 import optuna
+from optuna.integration import XGBoostPruningCallback
 
 class PotentialCustomerScoringModel:
   model_path = os.path.join(os.getcwd(), "resources", "models")
@@ -27,7 +28,6 @@ class PotentialCustomerScoringModel:
     self.embedding_dim = 768
     self.logger = logging.getLogger(__name__)
     
-    # Detect GPU availability once during initialization
     self.use_gpu = self._detect_gpu_availability()
     if self.use_gpu:
         self.logger.info("GPU detected - will use GPU acceleration")
@@ -168,21 +168,25 @@ class PotentialCustomerScoringModel:
             # Suggest hyperparameters
             params = base_params.copy()
             params.update({
+                "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
+                "grow_policy": trial.suggest_categorical("grow_policy", ["depthwise", "lossguide"]),
                 "verbosity": 0,
-                "eta": trial.suggest_float("eta", 0.01, 0.3, log=True),
-                "max_depth": trial.suggest_int("max_depth", 3, 10),
-                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
-                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-                "gamma": trial.suggest_float("gamma", 0, 0.5),
-                "reg_alpha": trial.suggest_float("reg_alpha", 0, 2.0),
-                "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 2.5),
+                "eta": trial.suggest_float("eta", 0.03, 0.2, log=True),
+                "max_depth": trial.suggest_int("max_depth", 4, 9),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 6),
+                "subsample": trial.suggest_float("subsample", 0.7, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
+                "gamma": trial.suggest_float("gamma", 0, 0.3),
+                "reg_alpha": trial.suggest_float("reg_alpha", 0, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.8, 2.0),
             })
             
-            n_estimators = trial.suggest_int("n_estimators", 100, 1000)
+            n_estimators = trial.suggest_int("n_estimators", 100, 800)
             
             # Create DMatrix for training
             dtrain = xgb.DMatrix(X_sample, label=y_sample)
+            
+            pruning_callback = XGBoostPruningCallback(trial, "test-rmse-mean")
             
             # Perform cross-validation with XGBoost
             cv_results = xgb.cv(
@@ -194,8 +198,8 @@ class PotentialCustomerScoringModel:
                 early_stopping_rounds=20,
                 seed=42,
                 shuffle=True,
+                callbacks=[pruning_callback],
                 verbose_eval=False,
-                return_train_scores=False
             )
             
             # Return the best validation RMSE (lower is better)
@@ -212,7 +216,18 @@ class PotentialCustomerScoringModel:
         study = optuna.create_study(
             direction="minimize",
             study_name=f"xgboost_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            sampler=optuna.samplers.TPESampler(seed=42)
+            sampler=optuna.samplers.TPESampler(
+              seed=42,
+              n_startup_trials=10,      # để TPE có dữ liệu ban đầu tốt hơn
+              n_ei_candidates=24,       # tăng số lượng ứng viên, tốt hơn cho GPU
+              multivariate=True,        # cho phép sampling đa chiều → tìm optimum tốt hơn
+              group=True,               # giảm trùng lặp param
+          ),
+          pruner=optuna.pruners.MedianPruner(
+              n_startup_trials=5,
+              n_warmup_steps=10,
+              interval_steps=5
+          ),
         )
         
         # Optimize hyperparameters
