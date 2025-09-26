@@ -8,9 +8,17 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
-from xgboost.callback import LearningRateScheduler
+from xgboost.callback import LearningRateScheduler, TrainingCallback
 import numpy as np
 import optuna
+
+class LoggingCallback(TrainingCallback):
+    def __init__(self, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+
+    def after_iteration(self, model, epoch, evals_log):
+        self.logger.info(f"[{epoch}] {evals_log}")
+        return False
 
 class PotentialCustomerScoringModel:
     model_path = os.path.join(os.getcwd(), "resources", "models")
@@ -204,6 +212,8 @@ class PotentialCustomerScoringModel:
                 lrdecay_callback = LearningRateScheduler(
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
+                
+                logging_callback = LoggingCallback(logger=self.logger)
 
                 cv_results = xgb.cv(
                     params,
@@ -214,7 +224,7 @@ class PotentialCustomerScoringModel:
                     early_stopping_rounds=20,  # Earlier stopping for GPU
                     seed=42,
                     shuffle=True,
-                    callbacks=[lrdecay_callback],
+                    callbacks=[lrdecay_callback, logging_callback],
                     verbose_eval=False,
                 )
                 
@@ -241,7 +251,7 @@ class PotentialCustomerScoringModel:
         
         try:
             # Adjust optimization strategy based on GPU/CPU
-            n_trials = 50 if self.use_gpu else 100  # Fewer trials for GPU to manage memory
+            n_trials = 20 if self.use_gpu else 50  # Fewer trials for GPU to manage memory
             timeout = 3600 if self.use_gpu else 7200  # Shorter timeout for GPU
             
             study = optuna.create_study(
