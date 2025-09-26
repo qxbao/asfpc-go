@@ -136,13 +136,13 @@ class PotentialCustomerScoringModel:
             "seed": 42,
         }
         if self.use_gpu:
-            base["device"] = "cuda:0"
+            base["device"] = "gpu"
             base["tree_method"] = "gpu_hist"
             base.update({
                 "max_bin": 256,
                 "single_precision_histogram": True,
             })
-            self.logger.info("Using GPU-optimized parameters (cuda:0, gpu_hist, max_bin=256)")
+            self.logger.info("Using GPU-optimized parameters (gpu, gpu_hist, max_bin=256)")
         else:
             base["device"] = "cpu"
             base["tree_method"] = "hist"  # Ensure CPU uses hist method
@@ -189,7 +189,7 @@ class PotentialCustomerScoringModel:
                 # GPU-specific optimizations
                 if self.use_gpu:
                     params.update({
-                        "device": "cuda:0",
+                        "device": "gpu",
                         "max_bin": 256,
                         "single_precision_histogram": True,
                     })
