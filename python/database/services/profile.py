@@ -8,12 +8,11 @@ from database.models.profile import UserProfile
 
 class ProfileService:
   def __init__(self):
-    self.__session = Database.get_session()
     self.logger = logging.getLogger("ProfileService")
 
   async def get_training_profiles(self) -> List[UserProfile]:
     try:
-      async with self.__session as conn:
+      async with Database.get_session() as conn:
         query = select(UserProfile)\
           .where(and_(UserProfile.is_analyzed,
                       UserProfile.emb_profile))\
@@ -23,3 +22,15 @@ class ProfileService:
     except Exception as e:
       self.logger.exception(e)
       return []
+    
+  async def get_profile_by_id(self, id: int, with_embed: bool = False):
+    try:
+      async with Database.get_session() as conn:
+        query = select(UserProfile).where(UserProfile.id == id)
+        if with_embed:
+          query = query.options(selectinload(UserProfile.emb_profile))
+        res = await conn.execute(query)
+        return res.scalar_one_or_none()
+    except Exception as e:
+      self.logger.exception(e)
+      return None

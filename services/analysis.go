@@ -236,7 +236,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
 			AccountID: sql.NullInt32{Int32: 0, Valid: false},
 		})
-		anlLogger.Error("Failed to get profiles: %v", err.Error())
+		anlLogger.Errorf("Failed to get profiles: %v", err.Error())
 		return
 	}
 
@@ -252,7 +252,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
 			AccountID: sql.NullInt32{Int32: 0, Valid: false},
 		})
-		anlLogger.Error("Failed to get profiles: %v", err.Error())
+		anlLogger.Errorf("Failed to get profiles: %v", err.Error())
 		return
 	}
 
@@ -270,7 +270,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
 			AccountID: sql.NullInt32{Int32: 0, Valid: false},
 		})
-		anlLogger.Error("Failed to get profiles: %v", err.Error())
+		anlLogger.Errorf("Failed to get profiles: %v", err.Error())
 		return
 	}
 
@@ -288,7 +288,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
 			AccountID: sql.NullInt32{Int32: 0, Valid: false},
 		})
-		anlLogger.Error("Failed to get profiles: %v", err.Error())
+		anlLogger.Errorf("Failed to get profiles: %v", err.Error())
 		return
 	}
 
@@ -304,7 +304,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
 			AccountID: sql.NullInt32{Int32: 0, Valid: false},
 		})
-		anlLogger.Error("Failed to get profiles: %v", err.Error())
+		anlLogger.Errorf("Failed to get profiles: %v", err.Error())
 		return
 	}
 
@@ -348,7 +348,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 				TargetID:  sql.NullInt32{Int32: profiles[i].ID, Valid: true},
 				AccountID: sql.NullInt32{Int32: 0, Valid: false},
 			})
-			anlLogger.Error("Failed to process profile %d: %v", profiles[i].ID, err.Error())
+			anlLogger.Errorf("Failed to process profile %d: %v", profiles[i].ID, err.Error())
 		} else {
 			count++
 		}
@@ -425,20 +425,20 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 
 	profiles, err := as.Server.Queries.GetProfileForEmbedding(ctx, int32(limit))
 	if err != nil {
-		logger.Error("Failed to get profiles for embedding: %v", err)
+		logger.Errorf("Failed to get profiles for embedding: %v", err)
 		return
 	}
 	apiKey, err := as.Server.Queries.GetGeminiKeyForUse(ctx)
 
 	if err != nil {
-		logger.Error("Failed to get gemini key: %v", err)
+		logger.Errorf("Failed to get gemini key: %v", err)
 		return
 	}
 	generativeService := generative.GetGenerativeService(apiKey.ApiKey, "gemini-embedding-001")
 	err = generativeService.Init()
 
 	if err != nil {
-		logger.Error("Failed to initialize generative service: %v", err)
+		logger.Errorf("Failed to initialize generative service: %v", err)
 		return
 	}
 
@@ -446,7 +446,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 	prompt, err := ps.GetPrompt(ctx, "gemini-embedding")
 
 	if err != nil {
-		logger.Error("Failed to get prompt (gemini-embedding): %v", err)
+		logger.Errorf("Failed to get prompt (gemini-embedding): %v", err)
 		return
 	}
 
@@ -477,7 +477,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 	count := 0
 	for i, err := range errs {
 		if err != nil {
-			logger.Error("Failed to process profile %d: %v", profiles[i].ID, err.Error())
+			logger.Errorf("Failed to process profile %d: %v", profiles[i].ID, err.Error())
 		} else {
 			count++
 		}

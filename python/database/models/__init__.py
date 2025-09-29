@@ -9,6 +9,7 @@ from .profile import UserProfile
 from .emb_profile import EmbeddedProfile
 from .prompt import Prompt
 from .config import Config
+from .request import Request
 
 __all__ = [
     "Base",
@@ -21,5 +22,6 @@ __all__ = [
     "UserProfile",
     "EmbeddedProfile",
     "Prompt",
-    "Config"
+    "Config",
+    "Request"
 ]

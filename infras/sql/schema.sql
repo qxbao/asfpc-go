@@ -79,8 +79,6 @@ CREATE TABLE IF NOT EXISTS public.user_profile
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     scraped_by_id integer NOT NULL,
-    is_analyzed boolean DEFAULT false,
-    gemini_score double precision,
     is_scanned boolean NOT NULL DEFAULT false,
     hometown character varying COLLATE pg_catalog."default",
     locale character varying(16) COLLATE pg_catalog."default" NOT NULL DEFAULT 'NOT_SPECIFIED'::character varying,
@@ -89,6 +87,9 @@ CREATE TABLE IF NOT EXISTS public.user_profile
     email character varying(100) COLLATE pg_catalog."default",
     phone character varying(12) COLLATE pg_catalog."default",
     profile_url character varying COLLATE pg_catalog."default" NOT NULL DEFAULT 'NOT_SPECIFIED'::character varying,
+    is_analyzed boolean DEFAULT false,
+    gemini_score double precision,
+    model_score double precision,
     CONSTRAINT user_profile_pkey PRIMARY KEY (id),
     CONSTRAINT user_profile_facebook_id_key UNIQUE (facebook_id),
     CONSTRAINT user_profile_scraped_by_id_fkey FOREIGN KEY (scraped_by_id)
@@ -214,3 +215,15 @@ CREATE TABLE IF NOT EXISTS public.embedded_profile
         ON DELETE CASCADE,
 	CONSTRAINT embedded_profile_pid_key UNIQUE(pid)
 );
+-- / Status: 0 - Pending, 1 - In progress, 2 - Completed, 3 - Failed, 4 - Aborted
+CREATE TABLE IF NOT EXISTS public.request
+(
+    id SERIAL,
+    progress double precision NOT NULL DEFAULT 0,
+    status smallint NOT NULL DEFAULT 0, 
+    description character varying(50) COLLATE pg_catalog."default", 
+    created_at timestamp without time zone DEFAULT now(),
+    updated_at timestamp without time zone DEFAULT now(),
+    error_message text COLLATE pg_catalog."default",
+    CONSTRAINT request_pkey PRIMARY KEY (id)
+)

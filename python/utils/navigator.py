@@ -1,15 +1,19 @@
+import asyncio
+import json
 import logging
 import sys
 from typing import Any
 
 import pandas as pd
-
 from database.services.account import AccountService
 from browser.account import AccountAutomationService
 from browser.group import GroupAutomationService
 from database.services.group import GroupService
 from database.services.profile import ProfileService
+from ml.model import PotentialCustomerScoringModel
+from database.services.request import RequestService
 from utils.dialog import DialogUtil
+import re
 
 
 class TaskNavigator:
@@ -53,6 +57,15 @@ class TaskNavigator:
       
   async def train_model(self) -> None:
     model_name = self.config.get("model-name", "ModelX")
+    request_id = self.config.get("request-id", None)
+    if request_id is not None:
+      try:
+        request_id = int(request_id)
+      except ValueError:
+        raise ValueError("--request-id must be an integer")
+    else:
+      raise ValueError("--request-id is required for train-model task")
+    
     self.logger.info(f"Training model: {model_name}")
     ps = ProfileService()
     profiles = await ps.get_training_profiles()
@@ -60,18 +73,63 @@ class TaskNavigator:
       raise ValueError("No profiles available for training")
     self.logger.info(f"Found {len(profiles)} profiles for training")
     input_df = pd.DataFrame([p.to_df() for p in profiles])
-    from ml.model import PotentialCustomerScoringModel
-    model = PotentialCustomerScoringModel()
+    rs = RequestService()
+    await rs.update_request(request_id, status=1, description="Preparing data for training...", progress=0.0)
+    model = PotentialCustomerScoringModel(
+      request_id=request_id
+    )
     auto_tune = self.config.get("auto-tune")
     if not auto_tune or auto_tune == "False":
       auto_tune = False
     else:
       auto_tune = True
     model.load_data(input_df)
+    await rs.update_request(request_id, status=1, progress=0.1, description="Training in progress...")
     model.train(auto_tune=auto_tune)
+    await rs.update_request(request_id, status=1, progress=0.95, description="Finalizing training...")
     self.logger.info("Model trained successfully")
     test_results = model.test()
-    self.logger.info(f"Test result: {test_results}")    
+    self.logger.info(f"Test result: {test_results}")
+    await rs.update_request(request_id, status=1, progress=0.99, description="Saving model...")
     model.save_model(model_name)
     self.logger.info(f"Model saved as: {model_name}")
     
+  async def predict(self) -> None:
+    model_name = self.config.get("model-name", None)
+    if not model_name:
+      raise Exception("Argument --model-name is required")
+    targets = self.config.get("targets", None)
+    if not targets:
+      raise Exception("Argument --targets is required")
+    match = re.match(r'^([0-9]+[,]?)*[0-9]+$', targets)
+    if not match:
+      raise Exception("Argument --targets format is invalid. Example: 1,2,3")
+    id_set = set(int(x) for x in targets.split(","))
+    id_list = list(id_set)
+    model = PotentialCustomerScoringModel()
+    model.load_model(model_name)
+    ps = ProfileService()
+    sem = asyncio.Semaphore(10)
+    async def get_score(profile_id: int):
+      profile = await ps.get_profile_by_id(profile_id, True)
+      if not profile:
+        return None
+      input_df = pd.DataFrame(profile.to_df())
+      score = model.predict(input_df)
+      if isinstance(score, list):
+        score = score[0]
+      return score
+    
+    async def semaphore_proc(sem, i):
+      async with sem:
+        return await get_score(id_list[i])
+    
+    tasks = [
+      semaphore_proc(sem, i) for i in range(len(id_list))
+    ]
+    
+    result = await asyncio.gather(*tasks)
+    res_obj = {}
+    for i in range(len(id_list)):
+      res_obj[str(id_list[i])] = result[i]
+    print(json.dumps(res_obj))

@@ -157,7 +157,7 @@ SELECT
   (COALESCE(up.phone, '') != '')::int AS non_null_count
 FROM public.user_profile up
 WHERE up.is_scanned = true
-ORDER BY non_null_count DESC, up.updated_at ASC
+ORDER BY model_score DESC NULLS LAST, gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2;
 
 -- name: GetProfilesAnalysisCronjob :many
@@ -183,6 +183,7 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
   (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles;
 
 -- name: GetProfileForEmbedding :many
@@ -236,6 +237,17 @@ RETURNING *;
 -- name: GetProfilesForExport :many
 SELECT up.*, ep.embedding FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid;
+
+-- name: GetProfilesForScoring :many
+SELECT up.id FROM public.user_profile up
+JOIN public.embedded_profile ep ON up.id = ep.pid
+WHERE is_scanned = true AND is_analyzed = true AND model_score IS NULL
+LIMIT $1;
+
+-- name: UpdateModelScore :exec
+UPDATE public.user_profile
+SET model_score = $2
+WHERE id = $1;
 
 -- name: ImportProfile :one
 INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
@@ -368,3 +380,16 @@ UPDATE public.gemini_key
 SET token_used = token_used + $2
 WHERE api_key = $1
 RETURNING *;
+
+-- name: CreateRequest :one
+INSERT INTO public.request(description)
+VALUES ($1)
+RETURNING id;
+
+-- name: UpdateRequestStatus :exec
+UPDATE public.request
+SET status = $2, updated_at = NOW(), error_message = $3, progress = $4, description = $5
+WHERE id = $1;
+
+-- name: GetRequestById :one
+SELECT * FROM public.request WHERE id = $1;

@@ -8,9 +8,8 @@ import (
 	"runtime"
 )
 
-var ex, _ = os.Executable()
-
-var PythonPath = filepath.Join(filepath.Dir(ex), "python")
+var exc, _ = os.Executable()
+var PythonPath = filepath.Join(filepath.Dir(exc), "python")
 
 type PythonService struct {
 	EnvName string
@@ -24,6 +23,8 @@ func (ps PythonService) RunScript(args ...string) (string, error) {
 	} else {
 		pythonExe = filepath.Join("venv", "bin", "python")
 	}
+
+	args = append(args, "--silent")
 
 	cmdArgs := append([]string{"main.py"}, args...)
 

@@ -11,7 +11,6 @@ class AccountService:
   """
 
   def __init__(self):
-    self.__session = Database.get_session()
     self.logger = logging.getLogger("AccountService")
 
   async def add_account(self, username, password, **kwargs) -> Account:
@@ -25,7 +24,7 @@ class AccountService:
     Returns:
         Account: The created Account object.
     """
-    async with self.__session as conn:
+    async with Database.get_session() as conn:
       account = Account(username=username, password=password, **kwargs)
       conn.add(account)
       await conn.commit()
@@ -39,7 +38,7 @@ class AccountService:
     Returns:
         List[Account]: A list of all Account objects.
     """
-    async with self.__session as conn:
+    async with Database.get_session() as conn:
       result = await conn.execute(select(Account))
       return list(result.scalars().all())
 
@@ -49,7 +48,7 @@ class AccountService:
     Returns:
         Account | None: The valid Account object or None if not found.
     """
-    async with self.__session as conn:
+    async with Database.get_session() as conn:
       result = await conn.execute(
         select(Account)
         .where(Account.is_block.is_not(False),
@@ -66,7 +65,7 @@ class AccountService:
     Returns:
         Account | None: The Account object with the given ID or None if not found.
     """
-    return await self.__session.get(Account, account_id)
+    return await Database.get_session().get(Account, account_id)
 
   async def update_account(self, account: Account) -> None:
     """Update an existing account.
@@ -74,7 +73,7 @@ class AccountService:
     Args:
         account (Account): The Account object to update.
     """
-    async with self.__session as conn:
+    async with Database.get_session() as conn:
       merged_account = await conn.merge(account)
       await conn.commit()
       await conn.refresh(merged_account)

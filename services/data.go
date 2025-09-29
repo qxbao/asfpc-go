@@ -27,6 +27,27 @@ func (ds *DataService) GetDataStats(c echo.Context) error {
 	})
 }
 
+func (ds *DataService) TraceRequest(c echo.Context) error {
+	queries := ds.Server.Queries
+	dto := new(infras.TraceRequestDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+
+	trace, err := queries.GetRequestById(c.Request().Context(), dto.RequestID)
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to trace request: " + err.Error(),
+		})
+	}
+
+	return c.JSON(200, map[string]any{
+		"data": trace,
+	})
+}
+
 func (ds *DataService) GetAllPrompts(c echo.Context) error {
 	queries := ds.Server.Queries
 	dto := new(infras.QueryWithPageDTO)

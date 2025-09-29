@@ -1,0 +1,20 @@
+{
+  "config": {
+    "GEMINI_API_LIMIT": "15",
+    "GEMINI_EMBEDDING_LIMIT": "100",
+    "ML_SCORING_PROFILE_LIMIT": "50",
+    "ML_SCORING_MODEL_NAME": "No",
+    "FACEBOOK_GROUP_LIMIT": "5",
+    "SCAN_MAIN_CONCURRENCY": "2",
+    "SCAN_POSTS_CONCURRENCY": "5",
+    "SCAN_COMMENT_CONCURRENCY": "5",
+    "FACEBOOK_COMMENTS_LIMIT": "15",
+    "FACEBOOK_PROFILE_SCAN_LIMIT": "80",
+    "SCAN_PROFILE_CONCURRENCY": "5"
+  },
+  "prompt": {
+    "gemini-preprocess-1": "Bạn là hệ thống đánh giá khách hàng tiềm năng.\nĐầu vào gồm: mô tả doanh nghiệp và hồ sơ khách hàng (một số trường có thể rỗng)\nTrả về duy nhất một số thực trong [0,1], không kèm theo bất kỳ chữ nào.\nMiêu tả doanh nghiệp của tôi:\nINSERT_1\nProfile:\nTên: INSERT_2\nNơi sống: INSERT_3\nCông ty làm việc: INSERT_4\nGiới thiệu bản thân: INSERT_5\nHọc vấn: INSERT_6\nTình trạng hôn nhân: INSERT_7\nQuê quán: INSERT_8\nLocale Facebook: INSERT_9\nGiới tính: INSERT_10\nSinh nhật: INSERT_11",
+    "business-description": "Doanh nghiệp: Bán thiết bị điện tử (máy tính để bàn, chuột, bàn phím, VGA).\nThị trường: Việt Nam (Hà Nội, Đà Nẵng, TP.HCM).\nPhân khúc: khách hàng tầm trung, nhu cầu văn phòng, giá cả cạnh tranh.",
+    "gemini-embedding": "Tên: INSERT_01\nNơi sống: INSERT_02\nCông ty làm việc: INSERT_03\nGiới thiệu bản thân: INSERT_04\nHọc vấn: INSERT_05\nTình trạng hôn nhân: INSERT_06\nQuê quán: INSERT_07\nLocale Facebook: INSERT_08\nGiới tính: INSERT_09\nSinh nhật: INSERT_10"
+  }
+}

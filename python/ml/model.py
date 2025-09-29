@@ -11,6 +11,9 @@ import xgboost as xgb
 from xgboost.callback import LearningRateScheduler
 import numpy as np
 import optuna
+import asyncio
+
+from database.services.request import RequestService
 
 class PotentialCustomerScoringModel:
     model_path = os.path.join(os.getcwd(), "resources", "models")
@@ -21,8 +24,10 @@ class PotentialCustomerScoringModel:
         "relationship_status"
     ]
     label_col = "gemini_score"
+    rs = RequestService()
     
-    def __init__(self):
+    def __init__(self, request_id: int | None = None):
+        self.request_id = request_id
         self.model = None
         self.encoders = {}
         self.scaler = None
@@ -97,12 +102,13 @@ class PotentialCustomerScoringModel:
                     return current_year - int(parts[2])
             except Exception as _:
                 return np.nan
-        X_age = np.array(df["birthday"].fillna("").apply(get_age).fillna(-1).values).reshape(-1, 1)
+        X_age = np.array(
+            df["birthday"].fillna("").infer_objects(copy=False).apply(get_age).fillna(-1).values
+        ).reshape(-1, 1)
         X = np.hstack([X_emb, X_cat.astype(np.float32), X_age.astype(np.float32)])  # Ensure float32
         return X.astype(np.float32)  # Convert entire feature matrix to float32 for GPU memory efficiency
 
     def load_data(self, df: pd.DataFrame, label_col="gemini_score"):
-        
         df = df.copy()
         df['score_bin'] = pd.qcut(df[label_col], q=5, duplicates='drop')
 
@@ -148,14 +154,11 @@ class PotentialCustomerScoringModel:
             self.logger.info("Using CPU parameters (cpu, hist)")
         return base
 
-    def auto_tune(self):
+    async def auto_tune(self):
         if not hasattr(self, "X_train"):
             raise ValueError("Data not loaded. Call load_data first.")
 
         base_params = self._get_base_params()
-        
-        # Reduce sample size for GPU memory optimization
-        # GPU memory is more limited than RAM
         if self.use_gpu:
             sample_size = min(9000, len(self.X_train))  # Smaller sample for GPU
             self.logger.info(f"Using GPU optimization with {sample_size} samples")
@@ -165,7 +168,6 @@ class PotentialCustomerScoringModel:
             
         X_sample = self.X_train[:sample_size]
         y_sample = self.y_train[:sample_size]
-        
         def objective(trial):
             """Optuna objective function for hyperparameter optimization"""
             try:
@@ -204,7 +206,6 @@ class PotentialCustomerScoringModel:
                 lrdecay_callback = LearningRateScheduler(
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
-                
 
                 cv_results = xgb.cv(
                     params,
@@ -230,7 +231,6 @@ class PotentialCustomerScoringModel:
                     import gc
                     del dtrain
                     gc.collect()
-                    
                 return best_rmse
                   
             except Exception as e:
@@ -264,12 +264,28 @@ class PotentialCustomerScoringModel:
             
             self.logger.info(f"Starting {'GPU' if self.use_gpu else 'CPU'} optimization with {n_trials} trials, timeout {timeout}s")
             
+            class UpdateRequestCallback:
+                def __init__(self, request_id: int | None, rs: RequestService):
+                    self.request_id = request_id
+                    self.rs = rs
+                    self.trial_count = 0
+
+                def __call__(self, study: optuna.Study, trial: optuna.trial.FrozenTrial):
+                    self.trial_count += 1
+                    if self.request_id is not None:
+                        asyncio.run(self.rs.update_request(self.request_id,
+                            status=1,
+                            progress=min(0.9, self.trial_count / n_trials * 0.8 + 0.1),
+                            description=f"Optuna trial in progress: {self.trial_count}/{n_trials}"
+                            ))
+            
             study.optimize(
                 objective, 
                 n_trials=n_trials,
                 timeout=timeout,
                 show_progress_bar=False,
                 gc_after_trial=True if self.use_gpu else False,  # Force garbage collection for GPU
+                callbacks=[UpdateRequestCallback(self.request_id, self.rs) if self.request_id is not None else None].remove(None)
             )
             
             best_params = study.best_params
@@ -397,7 +413,10 @@ class PotentialCustomerScoringModel:
         model_dir = os.path.join(self.model_path, model_name)
         
         self.model = xgb.Booster()
-        self.model.load_model(os.path.join(model_dir, "model.json"))
+        try:
+            self.model.load_model(os.path.join(model_dir, "model.json"))
+        except Exception:
+            raise ValueError("There's no model match this model name.")
         
         import pickle
         encoders_path = os.path.join(model_dir, "encoders.pkl")

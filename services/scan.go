@@ -1,7 +1,5 @@
 package services
 
-// TODO: GetPostsToScan should be remove later, also is_analyzed in post table
-
 import (
 	"context"
 	"database/sql"

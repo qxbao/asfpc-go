@@ -126,6 +126,16 @@ type Proxy struct {
 	UpdatedAt time.Time
 }
 
+type Request struct {
+	ID           int32
+	Progress     float64
+	Status       int16
+	Description  sql.NullString
+	CreatedAt    sql.NullTime
+	UpdatedAt    sql.NullTime
+	ErrorMessage sql.NullString
+}
+
 type UserProfile struct {
 	ID                 int32
 	FacebookID         string
@@ -138,8 +148,6 @@ type UserProfile struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ScrapedByID        int32
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
 	IsScanned          bool
 	Hometown           sql.NullString
 	Locale             string
@@ -148,4 +156,7 @@ type UserProfile struct {
 	Email              sql.NullString
 	Phone              sql.NullString
 	ProfileUrl         string
+	IsAnalyzed         sql.NullBool
+	GeminiScore        sql.NullFloat64
+	ModelScore         sql.NullFloat64
 }

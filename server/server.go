@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"os"
+	"path"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -11,7 +14,7 @@ import (
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/pkg/cron"
-	"github.com/qxbao/asfpc/pkg/logger"
+	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/routes"
 )
 
@@ -28,10 +31,12 @@ func (s *Server) Run() {
 }
 
 func (s *Server) start() {
-	if err := logger.InitLogger(false); err != nil {
+	if err := lg.InitLogger(true); err != nil {
 		log.Fatal("Failed to initialize logger:", err)
 	}
-	defer logger.FlushLogger()
+	defer lg.FlushLogger()
+
+	s.generateSeed()
 
 	s.Cron = &cron.CronService{
 		Server: &s.Server,
@@ -46,6 +51,7 @@ func (s *Server) start() {
 
 	s.Echo = e
 	s.initRoute()
+
 	HOST := os.Getenv("HOST")
 	PORT := os.Getenv("PORT")
 
@@ -78,7 +84,7 @@ func (s *Server) initDB() error {
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		logger.GetLogger("SERVER.GO").Info("Connected to the database successfully!")
+		lg.GetLogger("SERVER.GO").Info("Connected to the database successfully!")
 	}
 
 	s.Database = database
@@ -93,4 +99,55 @@ func (s Server) initRoute() {
 	routes.InitAnalysisRoutes(s.Server)
 	routes.InitMLRoutes(s.Server)
 	routes.InitSettingRoutes(s.Server)
+}
+
+type Seed struct {
+	Configs map[string]string `json:"configs"`
+	Prompts map[string]string `json:"prompts"`
+}
+
+func (s Server) generateSeed() {
+	logger := lg.GetLogger("SERVER.GO")
+	logger.Info("Generating seed data...")
+	exc, err := os.Executable()
+	if err != nil {
+		logger.Error("Failed to get executable path:", err)
+		return
+	}
+	data, err := os.ReadFile(path.Join(path.Dir(exc), "seed.json"))
+	
+	if err != nil {
+		logger.Error("Failed to read seed.json file:", err)
+		return
+	}
+	
+	var seed Seed
+	if err := json.Unmarshal(data, &seed); err != nil {
+		logger.Error("Failed to unmarshal seed.json:", err)
+		return
+	}
+	ctx := context.Background()
+	defer ctx.Done()
+	
+	for key, value := range seed.Configs {
+		_  = s.GetConfig(ctx, key, value)
+	}
+	for name, content := range seed.Prompts {
+		_, err := s.Queries.GetPrompt(ctx, name)
+		if err == nil  {
+			continue
+		}
+
+		_ , err = s.Queries.CreatePrompt(ctx, db.CreatePromptParams{
+			ServiceName:    name,
+			Content: content,
+			CreatedBy:      "system",
+		})
+
+		if err != nil {
+			logger.Error("Failed to create prompt:", err)
+		}
+	}
+
+	logger.Info("Seed data generated successfully")
 }
