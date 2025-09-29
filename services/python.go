@@ -25,8 +25,8 @@ func (ps PythonService) RunScript(args ...string) (string, error) {
 		pythonExe = filepath.Join("venv", "bin", "python")
 	}
 
-	if ps.Log {
-		args = append(args, "--silent")
+	args = append(args, "--silent")
+	if !ps.Log {
 		args = append(args, "--no-log")
 	}
 
