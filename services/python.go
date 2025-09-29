@@ -27,6 +27,7 @@ func (ps PythonService) RunScript(args ...string) (string, error) {
 
 	if ps.Log {
 		args = append(args, "--silent")
+		args = append(args, "--no-log")
 	}
 
 	cmdArgs := append([]string{"main.py"}, args...)
