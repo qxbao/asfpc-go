@@ -60,7 +60,12 @@ class MainProcess:
           format="%(asctime)s [%(levelname)s] %(message)s",
           stream=sys.stderr,
         )
-    
+    else:
+      logging.basicConfig(
+        level=logging.CRITICAL + 1,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        stream=sys.stderr,
+      )
     await Database.init(
         username=os.getenv("POSTGRE_USER", "postgres"),
         password=os.getenv("POSTGRE_PASSWORD", "password"),
