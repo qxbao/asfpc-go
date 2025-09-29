@@ -102,8 +102,8 @@ func (s Server) initRoute() {
 }
 
 type Seed struct {
-	Configs map[string]string `json:"configs"`
-	Prompts map[string]string `json:"prompts"`
+	Configs map[string]string `json:"config"`
+	Prompts map[string]string `json:"prompt"`
 }
 
 func (s Server) generateSeed() {
@@ -134,6 +134,7 @@ func (s Server) generateSeed() {
 	}
 	for name, content := range seed.Prompts {
 		_, err := s.Queries.GetPrompt(ctx, name)
+		lg.GetLogger("SERVER.GO").Info("Checking prompt:", name)
 		if err == nil  {
 			continue
 		}
