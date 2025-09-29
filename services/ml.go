@@ -317,6 +317,12 @@ func (s *MLService) ExportModel(c echo.Context) error {
 		}
 		filePath := path.Join(modelPath, d.Name())
 		fileData, err := os.ReadFile(filePath)
+		if err != nil {
+			return c.JSON(500, map[string]any{
+				"error": "Failed to read model file: " + err.Error(),
+			})
+		}
+
 		f, err := zipWriter.Create(d.Name())
 		if err != nil {
 			return c.JSON(500, map[string]any{
