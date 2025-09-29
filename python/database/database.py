@@ -37,6 +37,7 @@ class Database:
       connection_str: str = (
         f"postgresql+asyncpg://{username}:{quote(password)}@{host}/{db}"
       )
+      Database.cn_str = connection_str
       connection_str_hidden: str = (
         f"postgresql+asyncpg://{username}:{'*' * len(password)}@{host}/{db}"
       )
@@ -68,7 +69,7 @@ class Database:
 
   @staticmethod
   def get_session() -> AsyncSession:
-    """Get the database session.
+    """Get the database session. This session is bound to current event loop.
 
     Raises:
       RuntimeError: If the database session is not initialized or is closed.
@@ -80,6 +81,38 @@ class Database:
       Database.logger.exception("Database session is not initialized.")
       raise RuntimeError("Database session is not initialized.")
     return Database.__session()
+
+  @staticmethod
+  def get_isolated_session() -> AsyncSession:
+    """Get an isolated database session for use in background threads.
+    
+    This creates a new engine and session that won't be bound to the main event loop,
+    allowing safe use in background threads with their own event loops.
+    
+    Important: The caller is responsible for properly closing the session and disposing
+    the engine when done to prevent resource leaks.
+    
+    Returns:
+        AsyncSession: A new isolated database session.
+        
+    Raises:
+        RuntimeError: If the database connection string is not available.
+    """
+    if not hasattr(Database, 'cn_str') or not Database.cn_str:
+      Database.logger.exception("Database connection string is not available.")
+      raise RuntimeError("Database connection string is not available. Call Database.init() first.")
+    
+    try:
+      # Create a new engine specifically for this isolated session
+      isolated_engine = create_async_engine(Database.cn_str, echo=False, future=True)
+      isolated_sessionmaker = async_sessionmaker(bind=isolated_engine, expire_on_commit=False)
+      
+      Database.logger.debug("Created isolated database session for background thread")
+      return isolated_sessionmaker()
+      
+    except Exception as e:
+      Database.logger.error("Error creating isolated database session: %s", str(e))
+      raise RuntimeError(f"Failed to create isolated database session: {str(e)}")
 
   @staticmethod
   async def close():

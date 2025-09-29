@@ -53,7 +53,10 @@ func (s *MLService) Train(c echo.Context) error {
 }
 
 func (s *MLService) trainingTask(requestId int32, dto *infras.MLTrainDTO) {
-	pythonService := PythonService{EnvName: os.Getenv("PYTHON_ENV_NAME")}
+	pythonService := PythonService{
+		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+		Log:     true,
+	}
 	autoTune := "False"
 
 	if *dto.AutoTune {
@@ -196,7 +199,7 @@ func (s *MLService) ValidateModel(modelName string) (ModelValidation, error) {
 		if d.IsDir() {
 			continue
 		}
-		if requiredFiles[d.Name()] == true {
+		if requiredFiles[d.Name()] {
 			validCount++
 		}
 	}
@@ -379,6 +382,7 @@ func (s *MLService) ScoreProfilesCronjob() {
 
 	pythonService := PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+		Log:     false,
 	}
 
 	res, err := pythonService.RunScript("--task=predict",

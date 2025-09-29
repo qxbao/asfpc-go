@@ -11,7 +11,6 @@ import xgboost as xgb
 from xgboost.callback import LearningRateScheduler
 import numpy as np
 import optuna
-import asyncio
 
 from database.services.request import RequestService
 
@@ -53,7 +52,7 @@ class PotentialCustomerScoringModel:
 
     def _validate_embedding(self, emb):
         try:
-            arr = np.array(emb, dtype=np.float32)  # Use float32 for memory efficiency
+            arr = np.array(emb, dtype=np.float32)
             if arr.ndim == 1:
                 return arr
             elif arr.ndim == 2:
@@ -105,8 +104,8 @@ class PotentialCustomerScoringModel:
         X_age = np.array(
             df["birthday"].fillna("").infer_objects(copy=False).apply(get_age).fillna(-1).values
         ).reshape(-1, 1)
-        X = np.hstack([X_emb, X_cat.astype(np.float32), X_age.astype(np.float32)])  # Ensure float32
-        return X.astype(np.float32)  # Convert entire feature matrix to float32 for GPU memory efficiency
+        X = np.hstack([X_emb, X_cat.astype(np.float32), X_age.astype(np.float32)])
+        return X.astype(np.float32)
 
     def load_data(self, df: pd.DataFrame, label_col="gemini_score"):
         df = df.copy()
@@ -150,17 +149,17 @@ class PotentialCustomerScoringModel:
             self.logger.info("Using GPU-optimized parameters (gpu, gpu_hist, max_bin=256)")
         else:
             base["device"] = "cpu"
-            base["tree_method"] = "hist"  # Ensure CPU uses hist method
+            base["tree_method"] = "hist"
             self.logger.info("Using CPU parameters (cpu, hist)")
         return base
 
-    async def auto_tune(self):
+    def auto_tune(self) -> dict[str, Any]:
         if not hasattr(self, "X_train"):
             raise ValueError("Data not loaded. Call load_data first.")
 
         base_params = self._get_base_params()
         if self.use_gpu:
-            sample_size = min(9000, len(self.X_train))  # Smaller sample for GPU
+            sample_size = min(9000, len(self.X_train))
             self.logger.info(f"Using GPU optimization with {sample_size} samples")
         else:
             sample_size = min(12000, len(self.X_train))
@@ -188,7 +187,6 @@ class PotentialCustomerScoringModel:
                     "lr_decay": trial.suggest_float("lr_decay", 0.8, 1)
                 })
                 self.logger.info(f"Trial parameters: {params}")
-                # GPU-specific optimizations
                 if self.use_gpu:
                     params.update({
                         "device": "gpu",
@@ -196,9 +194,7 @@ class PotentialCustomerScoringModel:
                         "single_precision_histogram": True,
                     })
                 
-                n_estimators = trial.suggest_int("n_estimators", 100, 500)  # Reduced for faster GPU trials
-                
-                # Use DMatrix instead of QuantileDMatrix for better GPU compatibility
+                n_estimators = trial.suggest_int("n_estimators", 100, 500)
                 if self.use_gpu:
                     dtrain = xgb.DMatrix(X_sample, label=y_sample, enable_categorical=False)
                 else:
@@ -211,21 +207,20 @@ class PotentialCustomerScoringModel:
                     params,
                     dtrain,
                     num_boost_round=n_estimators,
-                    nfold=5 if self.use_gpu else 5,  # Reduce folds for GPU to save memory
+                    nfold=5 if self.use_gpu else 5,
                     metrics=["rmse"],
-                    early_stopping_rounds=20,  # Earlier stopping for GPU
+                    early_stopping_rounds=20,
                     seed=42,
                     shuffle=True,
                     callbacks=[lrdecay_callback],
                     verbose_eval=False,
                 )
                 
-                # Handle case where cv_results["test-rmse-mean"] might be a single value or Series
                 rmse_values = cv_results["test-rmse-mean"]
-                if hasattr(rmse_values, 'min'):
-                    best_rmse = rmse_values.min() # type: ignore
+                if isinstance(rmse_values, pd.Series):
+                    best_rmse = rmse_values.min() 
                 else:
-                    best_rmse = float(rmse_values) # type: ignore
+                    best_rmse = float(rmse_values)
                 
                 if self.use_gpu:
                     import gc
@@ -241,9 +236,8 @@ class PotentialCustomerScoringModel:
                 return float('inf')
         
         try:
-            # Adjust optimization strategy based on GPU/CPU
-            n_trials = 20 if self.use_gpu else 50  # Fewer trials for GPU to manage memory
-            timeout = 3600 if self.use_gpu else 7200  # Shorter timeout for GPU
+            n_trials = 20 if self.use_gpu else 50
+            timeout = 3600 if self.use_gpu else 7200 
             
             study = optuna.create_study(
                 direction="minimize",
@@ -264,35 +258,73 @@ class PotentialCustomerScoringModel:
             
             self.logger.info(f"Starting {'GPU' if self.use_gpu else 'CPU'} optimization with {n_trials} trials, timeout {timeout}s")
             
-            class UpdateRequestCallback:
-                def __init__(self, request_id: int | None, rs: RequestService):
+            class UpdateRequestCallback():
+                def __init__(self, request_id: int | None, rs: RequestService, logger):
                     self.request_id = request_id
                     self.rs = rs
                     self.trial_count = 0
+                    self.logger = logger
 
                 def __call__(self, study: optuna.Study, trial: optuna.trial.FrozenTrial):
                     self.trial_count += 1
                     if self.request_id is not None:
-                        asyncio.run(self.rs.update_request(self.request_id,
-                            status=1,
-                            progress=min(0.9, self.trial_count / n_trials * 0.8 + 0.1),
-                            description=f"Optuna trial in progress: {self.trial_count}/{n_trials}"
-                            ))
+                        progress = min(0.9, self.trial_count / n_trials * 0.8 + 0.1)
+                        description = f"Optuna trial in progress: {self.trial_count}/{n_trials}"
+                        self.logger.info(f"Updating request {self.request_id}, Progress: {progress:.2%}")
+                        
+                        import threading
+                        
+                        def isolated_update():
+                            try:
+                                import asyncio
+                                from database.services.request import RequestService
+                                from database.database import Database
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                
+                                try:
+                                    async def update_request_operation(request_id: int, progress: float, description: str):
+                                        """Database operation to update request status"""
+                                        rs = RequestService()
+                                        db_session = Database.get_isolated_session()
+                                        return await rs.update_request(request_id,
+                                                                       session=db_session,
+                                                                       progress=progress,
+                                                                       description=description,
+                                                                       status=1)
+                                    if self.request_id is not None:
+                                        success = loop.run_until_complete(
+                                            update_request_operation(self.request_id, progress, description)
+                                        )
+                                        if success:
+                                            self.logger.info(f"Successfully updated request {self.request_id}")
+                                        else:
+                                            self.logger.warning(f"Request {self.request_id} not found")
+                                    else:
+                                        self.logger.debug("No request_id provided, skipping update")
+                                finally:
+                                    loop.close()
+                                    
+                            except Exception as e:
+                                self.logger.warning(f"Failed to update request status: {e}")
+                        thread = threading.Thread(target=isolated_update, daemon=True)
+                        thread.start()
+                        self.logger.debug(f"Started isolated update thread for request {self.request_id}")
+            callback = UpdateRequestCallback(self.request_id, self.rs, self.logger)
             
             study.optimize(
                 objective, 
                 n_trials=n_trials,
                 timeout=timeout,
                 show_progress_bar=False,
-                gc_after_trial=True if self.use_gpu else False,  # Force garbage collection for GPU
-                callbacks=[UpdateRequestCallback(self.request_id, self.rs) if self.request_id is not None else None].remove(None)
+                gc_after_trial=True if self.use_gpu else False,
+                callbacks=[callback]
             )
             
             best_params = study.best_params
             self.logger.info(f"Optuna {'GPU' if self.use_gpu else 'CPU'} optimization completed. Best RMSE: {study.best_value:.4f}")
             self.logger.info(f"Best parameters: {best_params}")
             
-            # Clean up GPU memory after optimization
             if self.use_gpu:
                 import gc
                 gc.collect()
@@ -328,7 +360,6 @@ class PotentialCustomerScoringModel:
                 }
 
     def train(self, auto_tune: bool = True):
-        # Use appropriate DMatrix type based on GPU/CPU usage
         if self.use_gpu:
             dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
             dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
@@ -405,7 +436,6 @@ class PotentialCustomerScoringModel:
             "r2": r2_score(self.y_test, y_pred),
             "mae": np.mean(np.abs(self.y_test - y_pred)),
         }
-        # Convert numpy types to Python native types for JSON serialization
         self.test_results = self._convert_numpy_types(self.test_results)
         return self.test_results
       
@@ -444,9 +474,7 @@ class PotentialCustomerScoringModel:
             raise ValueError("No model found")
         X = self._prepare_features(df)
         dmatrix = xgb.DMatrix(X)
-        predictions = self.model.predict(dmatrix)  # Will use GPU if model was trained on GPU and device=cuda
-
-        # Convert numpy array to Python list for JSON serialization
+        predictions = self.model.predict(dmatrix)
         return self._convert_numpy_types(predictions)
     
     def _convert_numpy_types(self, obj) -> Any:
@@ -482,7 +510,6 @@ class PotentialCustomerScoringModel:
             with open(os.path.join(model_dir, "scalers.pkl"), "wb") as f:
                 pickle.dump(self.scaler, f)
         
-        # Prepare metadata with numpy type conversion
         if not hasattr(self, 'test_results'):
             self.test_results = {}
         self.test_results["saved_at"] = datetime.now().isoformat()
