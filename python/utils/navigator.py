@@ -81,7 +81,7 @@ class TaskNavigator:
     )
     self.logger.info("Loading trial: " + str(trials))
     if trials is not None:
-      model.trial = int(trials)
+      model.trials = int(trials)
     auto_tune = self.config.get("auto-tune")
     if not auto_tune or auto_tune == "False":
       auto_tune = False

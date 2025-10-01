@@ -79,20 +79,26 @@ func (s *MLService) trainingTask(requestId int32, dto *infras.MLTrainDTO) {
 	)
 
 	if err != nil {
-		s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
+		err :=s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
 			ID:     requestId,
 			Status: 3,
 			ErrorMessage:   sql.NullString{String: err.Error(), Valid: true},
 			Description: sql.NullString{String: "Training failed.", Valid: true},
 		})
+		if err != nil {
+			logger.Errorf("Failed to update request status for request %d: %v", requestId, err)
+		}
 		return
 	}
-	s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
+	err = s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
 		ID:     requestId,
 		Status: 2,
 		Progress: 1.0,
 		Description: sql.NullString{String: "Training completed.", Valid: true},
 	})
+	if err != nil {
+		logger.Errorf("Failed to update request status for request %d: %v", requestId, err)
+	}
 }
 
 type ModelMetadata struct {

@@ -137,17 +137,17 @@ class PotentialCustomerScoringModel:
         base = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
-            "tree_method": "hist",  # Modern hist method for both CPU and GPU
             "seed": 42,
         }
         if self.use_gpu:
-            base["device"] = "gpu"
-            base["tree_method"] = "gpu_hist"
+            base["device"] = "cuda"  # Modern device parameter (replaces deprecated "gpu")
+            base["tree_method"] = "hist"  # Use hist with device=cuda for GPU (XGBoost 2.0+)
             base["max_bin"] = 256  # GPU-specific optimization
-            self.logger.info("Using GPU-optimized parameters (device=gpu, gpu_hist, max_bin=256)")
+            self.logger.info("Using GPU-optimized parameters (device=cuda, tree_method=hist, max_bin=256)")
         else:
             base["device"] = "cpu"
-            self.logger.info("Using CPU parameters (device=cpu, hist)")
+            base["tree_method"] = "hist"
+            self.logger.info("Using CPU parameters (device=cpu, tree_method=hist)")
         return base
 
     def auto_tune(self) -> dict[str, Any]:
@@ -158,7 +158,7 @@ class PotentialCustomerScoringModel:
         if self.use_gpu:
             try:
                 test_matrix = xgb.DMatrix(self.X_train[:100], label=self.y_train[:100])
-                test_params = {"device": "gpu", "tree_method": "gpu_hist", "max_bin": 256}
+                test_params = {"device": "cuda", "tree_method": "hist", "max_bin": 256}
                 xgb.train(test_params, test_matrix, num_boost_round=1, verbose_eval=False)
                 self.logger.info("GPU is available and working")
                 del test_matrix
@@ -199,12 +199,8 @@ class PotentialCustomerScoringModel:
                     "lr_decay": trial.suggest_float("lr_decay", 0.8, 1)
                 })
                 self.logger.info(f"Trial parameters: {params}")
-                if self.use_gpu:
-                    params.update({
-                        "device": "gpu",
-                        "max_bin": 256,
-                        "single_precision_histogram": True,
-                    })
+                # Note: base_params already contains correct device settings
+                # No need to override here as base_params is copied above
                 
                 n_estimators = trial.suggest_int("n_estimators", 100, 500)
                 # Use regular DMatrix for hist tree method (both GPU and CPU)
@@ -246,7 +242,6 @@ class PotentialCustomerScoringModel:
                 return float('inf')
         
         try:
-            # Adjust optimization strategy based on GPU/CPU
             n_trials = self.trials
             timeout = 3600 if self.use_gpu else 7200
             study = optuna.create_study(
@@ -352,21 +347,31 @@ class PotentialCustomerScoringModel:
                 import gc
                 gc.collect()
             
-            return {
-                "booster": best_params["booster"],
-                "grow_policy": best_params["grow_policy"],
-                "nthread": best_params["nthread"],
-                "eta": best_params["eta"],
-                "max_depth": best_params["max_depth"],
-                "min_child_weight": best_params["min_child_weight"],
-                "subsample": best_params["subsample"],
-                "colsample_bytree": best_params["colsample_bytree"],
-                "gamma": best_params["gamma"],
-                "reg_alpha": best_params["reg_alpha"],
-                "reg_lambda": best_params["reg_lambda"],
-                "lr_decay": best_params["lr_decay"],
-                "n_estimators": best_params["n_estimators"],
-            }
+            # Validate best_params before accessing keys
+            if not best_params:
+                self.logger.warning("Optuna returned empty parameters, using defaults")
+                return {}
+            
+            # Safely extract parameters with validation
+            try:
+                return {
+                    "booster": best_params["booster"],
+                    "grow_policy": best_params["grow_policy"],
+                    "nthread": best_params["nthread"],
+                    "eta": best_params["eta"],
+                    "max_depth": best_params["max_depth"],
+                    "min_child_weight": best_params["min_child_weight"],
+                    "subsample": best_params["subsample"],
+                    "colsample_bytree": best_params["colsample_bytree"],
+                    "gamma": best_params["gamma"],
+                    "reg_alpha": best_params["reg_alpha"],
+                    "reg_lambda": best_params["reg_lambda"],
+                    "lr_decay": best_params["lr_decay"],
+                    "n_estimators": best_params["n_estimators"],
+                }
+            except KeyError as e:
+                self.logger.error(f"Missing expected parameter in best_params: {e}")
+                return {}
               
         except Exception as e:
             self.logger.warning(f"Optuna optimization failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
@@ -379,6 +384,19 @@ class PotentialCustomerScoringModel:
             else:
                 self.logger.error("CPU optimization also failed, using default parameters")
                 return {}
+
+    def _execute_training(self, params: dict, dtrain: xgb.DMatrix, dval: xgb.DMatrix, 
+                         num_boost_round: int, callbacks: list = None) -> xgb.Booster:
+        """Helper method to execute XGBoost training with given parameters"""
+        return xgb.train(
+            params,
+            dtrain,
+            num_boost_round=num_boost_round,
+            evals=[(dtrain, "train"), (dval, "eval")],
+            early_stopping_rounds=20,
+            verbose_eval=False,
+            callbacks=callbacks if callbacks else None
+        )
 
     def train(self, auto_tune: bool = True):
         # Use regular DMatrix for hist tree method (both GPU and CPU)
@@ -407,35 +425,32 @@ class PotentialCustomerScoringModel:
         if auto_tune:
             try:
                 best_params = self.auto_tune()
-                if "n_estimators" in best_params:
-                    num_boost_round = best_params.pop("n_estimators")
-                if "lr_decay" in best_params:
-                    lr_decay = best_params.pop("lr_decay")
-                params.update(best_params)
-                self.logger.info(f"Using Optuna-tuned parameters: {best_params}")
+                # Only update if auto_tune returned valid parameters
+                if best_params:
+                    if "n_estimators" in best_params:
+                        num_boost_round = best_params.pop("n_estimators")
+                    if "lr_decay" in best_params:
+                        lr_decay = best_params.pop("lr_decay")
+                    params.update(best_params)
+                    self.logger.info(f"Using Optuna-tuned parameters: {best_params}")
             except Exception as e:
                 self.logger.warning(f"Optuna tuning failed, using default parameters: {e}")
 
-        # Setup callbacks
+        # Setup callbacks with validation for eta parameter
         callbacks = []
-        if lr_decay is not None:
+        if lr_decay is not None and "eta" in params:
+            eta = params.get("eta", 0.05)  # Fallback to default if missing
             lrdecay_callback = LearningRateScheduler(
-                lambda epoch: params["eta"] * (lr_decay ** epoch)
+                lambda epoch: eta * (lr_decay ** epoch)
             )
             callbacks.append(lrdecay_callback)
-            self.logger.info(f"Using learning rate decay: {lr_decay}")
+            self.logger.info(f"Using learning rate decay: {lr_decay} (base eta: {eta})")
+        elif lr_decay is not None:
+            self.logger.warning("Learning rate decay requested but 'eta' not found in params, skipping decay")
 
         try:
             self.logger.info(f"Training model with {'GPU' if self.use_gpu else 'CPU'}")
-            self.model = xgb.train(
-                params,
-                dtrain,
-                num_boost_round=num_boost_round,
-                evals=[(dtrain, "train"), (dval, "eval")],
-                early_stopping_rounds=20,
-                verbose_eval=False,
-                callbacks=callbacks if callbacks else None
-            )
+            self.model = self._execute_training(params, dtrain, dval, num_boost_round, callbacks)
             self.logger.info("Model training completed successfully")
               
         except Exception as e:
@@ -445,14 +460,7 @@ class PotentialCustomerScoringModel:
                 self.use_gpu = False
                 params.update(self._get_base_params())
                 
-                self.model = xgb.train(
-                    params,
-                    dtrain,
-                    num_boost_round=num_boost_round,
-                    evals=[(dtrain, "train"), (dval, "eval")],
-                    early_stopping_rounds=20,
-                    verbose_eval=False
-                )
+                self.model = self._execute_training(params, dtrain, dval, num_boost_round, callbacks)
                 self.logger.info("Model training completed successfully with CPU fallback")
             else:
                 self.logger.error(f"CPU training also failed: {e}")
