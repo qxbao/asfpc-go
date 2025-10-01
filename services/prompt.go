@@ -10,7 +10,7 @@ import (
 )
 
 type PromptService struct {
-	Server infras.Server
+	Server *infras.Server
 }
 
 func (s *PromptService) GetPrompt(ctx context.Context, promptName string) (db.Prompt, error) {

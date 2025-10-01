@@ -21,7 +21,7 @@ import (
 )
 
 type MLService struct {
-	Server infras.Server
+	Server *infras.Server
 }
 
 func (s *MLService) Train(c echo.Context) error {
@@ -369,7 +369,7 @@ type ScoringResult map[string] float64
 
 
 func (s *MLService) ScoreProfilesCronjob() {
-	logger.Info("Starting cron task ModelScoring")
+	logger.Info("Starting cron task [ScoreProfilesCronjob]...")
 	queries := s.Server.Queries
 	ctx := context.Background()
 	limit := s.Server.GetConfig(ctx, "ML_SCORING_PROFILE_LIMIT", "50")

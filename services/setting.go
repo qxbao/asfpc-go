@@ -7,7 +7,7 @@ import (
 )
 
 type SettingService struct {
-	Server infras.Server
+	Server *infras.Server
 }
 
 func (s *SettingService) GetSettings(c echo.Context) error {

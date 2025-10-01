@@ -5,7 +5,7 @@ import (
 	"github.com/qxbao/asfpc/services"
 )
 
-func InitMLRoutes(s infras.Server) {
+func InitMLRoutes(s *infras.Server) {
 	service := services.MLService{Server: s}
 	e := s.Echo
 

@@ -14,7 +14,7 @@ import (
 )
 
 type AccountService struct {
-	Server infras.Server
+	Server *infras.Server
 }
 
 func (s *AccountService) GetAccountStats(c echo.Context) error {

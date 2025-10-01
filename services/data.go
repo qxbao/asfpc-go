@@ -9,7 +9,7 @@ import (
 )
 
 type DataService struct {
-	Server infras.Server
+	Server *infras.Server
 }
 
 func (ds *DataService) GetDataStats(c echo.Context) error {

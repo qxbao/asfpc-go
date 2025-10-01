@@ -5,7 +5,7 @@ import (
 	"github.com/qxbao/asfpc/services"
 )
 
-func InitAccountRoutes(s infras.Server) {
+func InitAccountRoutes(s *infras.Server) {
 	e := s.Echo
 
 	services := services.AccountService{Server: s}

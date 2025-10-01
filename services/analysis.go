@@ -32,7 +32,7 @@ type GeminiEmbeddingTaskInput struct {
 }
 
 type AnalysisService struct {
-	Server infras.Server
+	Server *infras.Server
 }
 
 var anlLogger = lg.GetLogger("AnalysisService")

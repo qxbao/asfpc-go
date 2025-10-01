@@ -5,7 +5,7 @@ import (
 	"github.com/qxbao/asfpc/services"
 )
 
-func InitAnalysisRoutes(s infras.Server) {
+func InitAnalysisRoutes(s *infras.Server) {
 	service := services.AnalysisService{Server: s}
 	e := s.Echo
 

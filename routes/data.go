@@ -5,7 +5,7 @@ import (
 	"github.com/qxbao/asfpc/services"
 )
 
-func InitDataRoutes(s infras.Server) {
+func InitDataRoutes(s *infras.Server) {
 	e := s.Echo
 	services := services.DataService{Server: s}
 

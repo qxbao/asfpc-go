@@ -1,10 +1,20 @@
 package main
 
 import (
+	"github.com/qxbao/asfpc/routes"
 	"github.com/qxbao/asfpc/server"
+	"github.com/qxbao/asfpc/server/modules/cron"
+	"github.com/qxbao/asfpc/server/modules/database"
+	"go.uber.org/fx"
 )
 
 func main() {
-	server := new(server.Server)
-	server.Run()
+	app := fx.New(
+		database.DatabaseModule,
+		server.ServerModule,
+		cron.CronModule,
+		routes.RoutesModule,
+	)
+
+	app.Run()
 }
