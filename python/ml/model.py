@@ -137,26 +137,37 @@ class PotentialCustomerScoringModel:
         base = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
-            "tree_method": "hist",  # Modern parameter for both CPU and GPU
+            "tree_method": "hist",  # Modern hist method for both CPU and GPU
             "seed": 42,
         }
         if self.use_gpu:
             base["device"] = "gpu"
             base["tree_method"] = "gpu_hist"
-            base.update({
-                "max_bin": 256,
-                "single_precision_histogram": True,
-            })
-            self.logger.info("Using GPU-optimized parameters (gpu, gpu_hist, max_bin=256)")
+            base["max_bin"] = 256  # GPU-specific optimization
+            self.logger.info("Using GPU-optimized parameters (device=gpu, gpu_hist, max_bin=256)")
         else:
             base["device"] = "cpu"
-            base["tree_method"] = "hist"
-            self.logger.info("Using CPU parameters (cpu, hist)")
+            self.logger.info("Using CPU parameters (device=cpu, hist)")
         return base
 
     def auto_tune(self) -> dict[str, Any]:
         if not hasattr(self, "X_train"):
             raise ValueError("Data not loaded. Call load_data first.")
+
+        # Test GPU availability before starting optimization
+        if self.use_gpu:
+            try:
+                test_matrix = xgb.DMatrix(self.X_train[:100], label=self.y_train[:100])
+                test_params = {"device": "gpu", "tree_method": "gpu_hist", "max_bin": 256}
+                xgb.train(test_params, test_matrix, num_boost_round=1, verbose_eval=False)
+                self.logger.info("GPU is available and working")
+                del test_matrix
+                import gc
+                gc.collect()
+            except Exception as e:
+                self.logger.warning(f"GPU test failed: {e}")
+                self.logger.info("Switching to CPU for optimization")
+                self.use_gpu = False
 
         base_params = self._get_base_params()
         if self.use_gpu:
@@ -196,10 +207,8 @@ class PotentialCustomerScoringModel:
                     })
                 
                 n_estimators = trial.suggest_int("n_estimators", 100, 500)
-                if self.use_gpu:
-                    dtrain = xgb.DMatrix(X_sample, label=y_sample, enable_categorical=False)
-                else:
-                    dtrain = xgb.QuantileDMatrix(X_sample, label=y_sample)
+                # Use regular DMatrix for hist tree method (both GPU and CPU)
+                dtrain = xgb.DMatrix(X_sample, label=y_sample, enable_categorical=False)
                 lrdecay_callback = LearningRateScheduler(
                     lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
                 )
@@ -323,8 +332,21 @@ class PotentialCustomerScoringModel:
             )
             
             best_params = study.best_params
-            self.logger.info(f"Optuna {'GPU' if self.use_gpu else 'CPU'} optimization completed. Best RMSE: {study.best_value:.4f}")
+            best_value = study.best_value
+            self.logger.info(f"Optuna {'GPU' if self.use_gpu else 'CPU'} optimization completed. Best RMSE: {best_value:.4f}")
             self.logger.info(f"Best parameters: {best_params}")
+            
+            if best_value == float('inf'):
+                self.logger.warning(f"All {'GPU' if self.use_gpu else 'CPU'} trials failed (best RMSE is inf)")
+                if self.use_gpu:
+                    self.logger.info("Switching to CPU optimization due to GPU failure")
+                    import gc
+                    gc.collect()
+                    self.use_gpu = False
+                    return self.auto_tune()
+                else:
+                    self.logger.error("All CPU trials also failed, returning empty parameters to use defaults")
+                    return {}
             
             if self.use_gpu:
                 import gc
@@ -359,12 +381,9 @@ class PotentialCustomerScoringModel:
                 return {}
 
     def train(self, auto_tune: bool = True):
-        if self.use_gpu:
-            dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
-            dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
-        else:
-            dtrain = xgb.QuantileDMatrix(self.X_train, label=self.y_train)
-            dval = xgb.DMatrix(self.X_test, label=self.y_test)
+        # Use regular DMatrix for hist tree method (both GPU and CPU)
+        dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
+        dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
 
         params = self._get_base_params()
         params.update({

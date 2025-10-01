@@ -63,10 +63,19 @@ func (s *MLService) trainingTask(requestId int32, dto *infras.MLTrainDTO) {
 		autoTune = "True"
 	}
 
-	_, err := pythonService.RunScript("--task=train-model",
+	args := []string{
+		"--task=train-model",
 		fmt.Sprintf("--model-name=%s", *dto.ModelName),
 		fmt.Sprintf("--auto-tune=%s", autoTune),
 		fmt.Sprintf("--request-id=%d", requestId),
+	}
+
+	if dto.Trials != nil {
+		args = append(args, fmt.Sprintf("--trials=%d", *dto.Trials))
+	}
+
+	_, err := pythonService.RunScript(
+		args...,
 	)
 
 	if err != nil {
