@@ -386,7 +386,7 @@ class PotentialCustomerScoringModel:
                 return {}
 
     def _execute_training(self, params: dict, dtrain: xgb.DMatrix, dval: xgb.DMatrix, 
-                         num_boost_round: int, callbacks: list = None) -> xgb.Booster:
+                         num_boost_round: int, callbacks: list | None = None) -> xgb.Booster:
         """Helper method to execute XGBoost training with given parameters"""
         return xgb.train(
             params,
