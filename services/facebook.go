@@ -15,11 +15,13 @@ type FacebookGraph struct {
 	AccessToken string
 }
 
-const BaseURL string = "https://api.facebook.com/restserver.php"
+const BaseURLAndroid string = "https://api.facebook.com/restserver.php"
+const BaseURLIOS string = "https://b-graph.facebook.com/auth/login"
 const GraphURL string = "https://graph.facebook.com"
 const LatestAPIVersion string = "v23.0"
 const APISecret string = "62f8ce9f74b12f84c123cc23437a4a32"
-const APIKey string = "882a8490361da98702bf97a021ddc14d"
+const APIKeyAndroid string = "882a8490361da98702bf97a021ddc14d"
+const APIKeyIOS string = "6628568379|c1e620fa708a1d5696fb991c1bde5662"
 
 type AccessTokenResponse struct {
 	AccessToken *string `json:"access_token"`
@@ -44,9 +46,9 @@ func (fg FacebookGraph) signCreator(data map[string]string) map[string]string {
 	return data
 }
 
-func (fg FacebookGraph) GenerateFBAccessToken(username string, password string) (*string, error) {
+func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password string) (*string, error) {
 	data := map[string]string{
-		"api_key":                  APIKey,
+		"api_key":                  APIKeyAndroid,
 		"email":                    username,
 		"credentials_type":         "password",
 		"format":                   "json",
@@ -63,7 +65,7 @@ func (fg FacebookGraph) GenerateFBAccessToken(username string, password string) 
 	for key, value := range data {
 		values.Set(key, value)
 	}
-	url := fmt.Sprintf("%s?%s", BaseURL, values.Encode())
+	url := fmt.Sprintf("%s?%s", BaseURLAndroid, values.Encode())
 	c := resty.New()
 	defer c.Close()
 
@@ -79,9 +81,43 @@ func (fg FacebookGraph) GenerateFBAccessToken(username string, password string) 
 		return nil, err
 	}
 
-	
 	if atResponse.AccessToken == nil {
-		return nil, fmt.Errorf("(username = %s) Failed to get access token: Cannot find access_token in response", username)
+		return nil, fmt.Errorf("(username = %s, token_type = Android) Failed to get access token: Cannot find access_token in response", username)
+	}
+
+	return atResponse.AccessToken, nil
+}
+
+func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password string) (*string, error) {
+	data := map[string]string{
+		"access_token": APIKeyIOS,
+		"email":        username,
+		"password":     password,
+		"method":       "post",
+	}
+	data = fg.signCreator(data)
+	values := url.Values{}
+	for key, value := range data {
+		values.Set(key, value)
+	}
+	url := fmt.Sprintf("%s?%s", BaseURLAndroid, values.Encode())
+	c := resty.New()
+	defer c.Close()
+
+	var atResponse AccessTokenResponse
+
+	_, err := c.R().
+		SetQueryParams(data).
+		SetHeader("User-Agent", GetRandomAndroidUA()).
+		SetResult(&atResponse).
+		Get(url)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if atResponse.AccessToken == nil {
+		return nil, fmt.Errorf("(username = %s, token_type = IOS) Failed to get access token: Cannot find access_token in response", username)
 	}
 
 	return atResponse.AccessToken, nil
