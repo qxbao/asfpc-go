@@ -363,7 +363,7 @@ type ScoringResult map[string] float64
 
 
 func (s *MLService) ScoreProfilesCronjob() {
-	logger.Info("Starting cron task [ScanAllGroups]")
+	logger.Info("Starting cron task ModelScoring")
 	queries := s.Server.Queries
 	ctx := context.Background()
 	limit := s.Server.GetConfig(ctx, "ML_SCORING_PROFILE_LIMIT", "50")

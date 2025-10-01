@@ -190,7 +190,7 @@ SELECT
 SELECT * FROM public.user_profile
 WHERE id NOT IN (
   SELECT pid FROM public.embedded_profile
-) LIMIT $1;
+) AND is_scanned = true LIMIT $1;
 
 -- name: CreateEmbeddedProfile :one
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
@@ -241,7 +241,7 @@ JOIN public.embedded_profile ep ON up.id = ep.pid;
 -- name: GetProfilesForScoring :many
 SELECT up.id FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid
-WHERE is_scanned = true AND is_analyzed = true AND model_score IS NULL
+WHERE is_scanned = true AND model_score IS NULL
 LIMIT $1;
 
 -- name: UpdateModelScore :exec

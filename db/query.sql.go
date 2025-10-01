@@ -1150,7 +1150,7 @@ const getProfileForEmbedding = `-- name: GetProfileForEmbedding :many
 SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score FROM public.user_profile
 WHERE id NOT IN (
   SELECT pid FROM public.embedded_profile
-) LIMIT $1
+) AND is_scanned = true LIMIT $1
 `
 
 func (q *Queries) GetProfileForEmbedding(ctx context.Context, limit int32) ([]UserProfile, error) {
@@ -1473,7 +1473,7 @@ func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExp
 const getProfilesForScoring = `-- name: GetProfilesForScoring :many
 SELECT up.id FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid
-WHERE is_scanned = true AND is_analyzed = true AND model_score IS NULL
+WHERE is_scanned = true AND model_score IS NULL
 LIMIT $1
 `
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
@@ -215,6 +216,12 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 	anlLogger.Info("Starting Gemini scoring cronjob")
 	ctx := context.Background()
 	defer ctx.Done()
+
+	enableGemini := as.Server.GetConfig(ctx, "USE_GEMINI_ANALYSIS_BOOL", "TRUE")
+	if strings.ToLower(enableGemini) != "true" {
+		anlLogger.Info("Gemini analysis is disabled. Exiting cronjob.")
+		return
+	}
 
 	geminiAPILimit := as.Server.GetConfig(ctx, "GEMINI_API_LIMIT", "15")
 	geminiAPILimitInt, err := strconv.ParseInt(geminiAPILimit, 10, 32)
