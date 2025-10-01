@@ -27,6 +27,7 @@ class PotentialCustomerScoringModel:
     
     def __init__(self, request_id: int | None = None):
         self.request_id = request_id
+        self.trials = 20
         self.model = None
         self.encoders = {}
         self.scaler = None
@@ -236,9 +237,9 @@ class PotentialCustomerScoringModel:
                 return float('inf')
         
         try:
-            n_trials = 20 if self.use_gpu else 50
-            timeout = 3600 if self.use_gpu else 7200 
-            
+            # Adjust optimization strategy based on GPU/CPU
+            n_trials = self.trials
+            timeout = 3600 if self.use_gpu else 7200
             study = optuna.create_study(
                 direction="minimize",
                 study_name=f"xgboost_tuning_{'gpu' if self.use_gpu else 'cpu'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -314,7 +315,7 @@ class PotentialCustomerScoringModel:
             
             study.optimize(
                 objective, 
-                n_trials=n_trials,
+                n_trials=self.trials,
                 timeout=timeout,
                 show_progress_bar=False,
                 gc_after_trial=True if self.use_gpu else False,
@@ -330,6 +331,9 @@ class PotentialCustomerScoringModel:
                 gc.collect()
             
             return {
+                "booster": best_params["booster"],
+                "grow_policy": best_params["grow_policy"],
+                "nthread": best_params["nthread"],
                 "eta": best_params["eta"],
                 "max_depth": best_params["max_depth"],
                 "min_child_weight": best_params["min_child_weight"],
@@ -338,6 +342,7 @@ class PotentialCustomerScoringModel:
                 "gamma": best_params["gamma"],
                 "reg_alpha": best_params["reg_alpha"],
                 "reg_lambda": best_params["reg_lambda"],
+                "lr_decay": best_params["lr_decay"],
                 "n_estimators": best_params["n_estimators"],
             }
               
@@ -351,13 +356,7 @@ class PotentialCustomerScoringModel:
                 return self.auto_tune()
             else:
                 self.logger.error("CPU optimization also failed, using default parameters")
-                return {
-                    "eta": 0.1,
-                    "max_depth": 6,
-                    "subsample": 0.8,
-                    "colsample_bytree": 0.8,
-                    "n_estimators": 500,
-                }
+                return {}
 
     def train(self, auto_tune: bool = True):
         if self.use_gpu:
@@ -369,24 +368,43 @@ class PotentialCustomerScoringModel:
 
         params = self._get_base_params()
         params.update({
-            "eta": 0.1,
-            "max_depth": 6,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
+            "booster": "gbtree",           # Standard gradient boosting
+            "grow_policy": "lossguide",    # Loss-guided growth for better accuracy
+            "eta": 0.05,                   # Lower learning rate for smoother convergence
+            "max_depth": 5,                # Moderate depth to prevent overfitting on small score range
+            "min_child_weight": 3,         # Higher to reduce noise in probability predictions
+            "subsample": 0.85,             # High subsample for stability
+            "colsample_bytree": 0.85,      # High feature sampling for robustness
+            "gamma": 0.1,                  # Small regularization for pruning
+            "reg_alpha": 0.3,              # L1 regularization to handle sparse features (embeddings)
+            "reg_lambda": 1.2,             # L2 regularization for smooth predictions
+            "nthread": 4,                  # Parallel threads
         })
         self.train_params = params
         
-        num_boost_round = 500
+        num_boost_round = 800  # More rounds with lower learning rate
+        lr_decay = 0.95  # Default learning rate decay for progressive learning
         
         if auto_tune:
             try:
                 best_params = self.auto_tune()
                 if "n_estimators" in best_params:
                     num_boost_round = best_params.pop("n_estimators")
+                if "lr_decay" in best_params:
+                    lr_decay = best_params.pop("lr_decay")
                 params.update(best_params)
                 self.logger.info(f"Using Optuna-tuned parameters: {best_params}")
             except Exception as e:
                 self.logger.warning(f"Optuna tuning failed, using default parameters: {e}")
+
+        # Setup callbacks
+        callbacks = []
+        if lr_decay is not None:
+            lrdecay_callback = LearningRateScheduler(
+                lambda epoch: params["eta"] * (lr_decay ** epoch)
+            )
+            callbacks.append(lrdecay_callback)
+            self.logger.info(f"Using learning rate decay: {lr_decay}")
 
         try:
             self.logger.info(f"Training model with {'GPU' if self.use_gpu else 'CPU'}")
@@ -396,7 +414,8 @@ class PotentialCustomerScoringModel:
                 num_boost_round=num_boost_round,
                 evals=[(dtrain, "train"), (dval, "eval")],
                 early_stopping_rounds=20,
-                verbose_eval=False
+                verbose_eval=False,
+                callbacks=callbacks if callbacks else None
             )
             self.logger.info("Model training completed successfully")
               

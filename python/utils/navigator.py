@@ -58,6 +58,7 @@ class TaskNavigator:
   async def train_model(self) -> None:
     model_name = self.config.get("model-name", "ModelX")
     request_id = self.config.get("request-id", None)
+    trials = self.config.get("trials", None)
     if request_id is not None:
       try:
         request_id = int(request_id)
@@ -78,6 +79,9 @@ class TaskNavigator:
     model = PotentialCustomerScoringModel(
       request_id=request_id
     )
+    self.logger.info("Loading trial: " + str(trials))
+    if trials is not None:
+      model.trial = int(trials)
     auto_tune = self.config.get("auto-tune")
     if not auto_tune or auto_tune == "False":
       auto_tune = False

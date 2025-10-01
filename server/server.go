@@ -102,8 +102,8 @@ func (s Server) initRoute() {
 }
 
 type Seed struct {
-	Configs map[string]string `json:"config"`
-	Prompts map[string]string `json:"prompt"`
+	Configs map[string]string `json:"config" binding:"required"`
+	Prompts map[string]string `json:"prompt" binding:"required"`
 }
 
 func (s Server) generateSeed() {

@@ -10,7 +10,8 @@
     "SCAN_COMMENT_CONCURRENCY": "5",
     "FACEBOOK_COMMENTS_LIMIT": "15",
     "FACEBOOK_PROFILE_SCAN_LIMIT": "80",
-    "SCAN_PROFILE_CONCURRENCY": "5"
+    "SCAN_PROFILE_CONCURRENCY": "5",
+    "USE_GEMINI_ANALYSIS_BOOL": "TRUE"
   },
   "prompt": {
     "gemini-preprocess-1": "Bạn là hệ thống đánh giá khách hàng tiềm năng.\nĐầu vào gồm: mô tả doanh nghiệp và hồ sơ khách hàng (một số trường có thể rỗng)\nTrả về duy nhất một số thực trong [0,1], không kèm theo bất kỳ chữ nào.\nMiêu tả doanh nghiệp của tôi:\nINSERT_1\nProfile:\nTên: INSERT_2\nNơi sống: INSERT_3\nCông ty làm việc: INSERT_4\nGiới thiệu bản thân: INSERT_5\nHọc vấn: INSERT_6\nTình trạng hôn nhân: INSERT_7\nQuê quán: INSERT_8\nLocale Facebook: INSERT_9\nGiới tính: INSERT_10\nSinh nhật: INSERT_11",
