@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/qxbao/asfpc/infras"
+	lg "github.com/qxbao/asfpc/pkg/logger"
 	"resty.dev/v3"
 )
 
@@ -70,8 +71,9 @@ func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password s
 	defer c.Close()
 
 	var atResponse AccessTokenResponse
+	logger := lg.GetLogger("FacebookGraph")
 
-	_, err := c.R().
+	resp, err := c.R().
 		SetQueryParams(data).
 		SetHeader("User-Agent", GetRandomAndroidUA()).
 		SetResult(&atResponse).
@@ -82,6 +84,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password s
 	}
 
 	if atResponse.AccessToken == nil {
+		logger.Errorf(fmt.Sprintf("Android Token Response missing access_token - Full response: %s", resp.String()))
 		return nil, fmt.Errorf("(username = %s, token_type = Android) Failed to get access token: Cannot find access_token in response", username)
 	}
 
@@ -100,16 +103,16 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 	for key, value := range data {
 		values.Set(key, value)
 	}
-	url := fmt.Sprintf("%s?%s", BaseURLAndroid, values.Encode())
+	url := fmt.Sprintf("%s?%s", BaseURLIOS, values.Encode())
 	c := resty.New()
 	defer c.Close()
 
 	var atResponse AccessTokenResponse
+	logger := lg.GetLogger("FacebookGraph")
 
-	_, err := c.R().
-		SetQueryParams(data).
-		SetHeader("User-Agent", GetRandomAndroidUA()).
+	resp, err := c.R().
 		SetResult(&atResponse).
+		SetHeader("User-Agent", GetRandomIOSUA()).
 		Get(url)
 
 	if err != nil {
@@ -117,6 +120,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 	}
 
 	if atResponse.AccessToken == nil {
+		logger.Errorf(fmt.Sprintf("iOS Token Response missing access_token %s - Full response: %s", url, resp.String()))
 		return nil, fmt.Errorf("(username = %s, token_type = IOS) Failed to get access token: Cannot find access_token in response", username)
 	}
 
