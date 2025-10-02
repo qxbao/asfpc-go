@@ -15,4 +15,7 @@ func InitCronRoutes(s *infras.Server, cronService *cron.CronService) {
 	e := s.Echo
 
 	e.GET("/cron/list", service.ListJobs)
+	e.POST("/cron/trigger", service.TriggerJob)
+	e.POST("/cron/stop", service.StopJob)
+	e.POST("/cron/resume", service.ResumeJob)
 }

@@ -28,7 +28,7 @@ func NewCronService(server *infras.Server) (*CronService, error) {
 			Scheduler: s,
 			Logger:    logger,
 			Server:    server,
-			Jobs:      make(map[string]infras.JobDetail),
+			Jobs:      make(map[string]*infras.JobDetail),
 		},
 	}
 
@@ -56,7 +56,7 @@ func (c *CronService) AddTask(s *infras.Server) {
 			c.Logger.Errorf("Failed to register cron job %s: %v", name, err)
 			continue
 		}
-		c.Jobs[name] = infras.JobDetail{
+		c.Jobs[name] = &infras.JobDetail{
 			Name: name,
 			Job:  &t,
 		}
@@ -71,7 +71,7 @@ func (c *CronService) ListJobs() (map[string]*infras.JobStatus, error) {
 	var jobMap = make(map[string]*infras.JobStatus)
 	for name := range TaskFuncs {
 		jobRef, exists := c.Jobs[name]
-		if !exists {
+		if !exists || jobRef.Job == nil {
 			jobMap[name] = &infras.JobStatus{
 				Name:      name,
 				NextRun:   nil,
@@ -108,7 +108,7 @@ func (c *CronService) StopJob(jobName string) error {
 		return err
 	}
 	c.Logger.Infof("Successfully stopped cron job %s", jobName)
-	c.Jobs[jobName] = infras.JobDetail{
+	c.Jobs[jobName] = &infras.JobDetail{
 		Name: jobName,
 		Job:  nil,
 	}
@@ -117,8 +117,8 @@ func (c *CronService) StopJob(jobName string) error {
 
 func (c *CronService) ResumeJob(jobName string) error {
 	jobRef, exists := c.Jobs[jobName]
-	if !exists || jobRef.Job == nil {
-		return fmt.Errorf("cron job %s is not running", jobName)
+	if exists && jobRef.Job != nil {
+		return fmt.Errorf("cron job %s is running", jobName)
 	}
 	taskFunc, exists := TaskFuncs[jobName]
 	if !exists {
@@ -133,7 +133,7 @@ func (c *CronService) ResumeJob(jobName string) error {
 		c.Logger.Errorf("Failed to resume cron job %s: %v", jobName, err)
 		return err
 	}
-	c.Jobs[jobName] = infras.JobDetail{
+	c.Jobs[jobName] = &infras.JobDetail{
 		Name: jobName,
 		Job:  &j,
 	}
@@ -143,7 +143,7 @@ func (c *CronService) ResumeJob(jobName string) error {
 
 func (c *CronService) ForceRun(jobName string) error {
 	jobRef, exists := c.Jobs[jobName]
-	if !exists || jobRef.Job == nil {
+	if !exists || jobRef == nil {
 		return fmt.Errorf("cron job %s is not running", jobName)
 	}
 	job := *jobRef.Job

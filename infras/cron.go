@@ -12,7 +12,7 @@ type CronService struct {
 	Scheduler gocron.Scheduler
 	Logger    *zap.SugaredLogger
 	Server    *Server
-	Jobs      map[string] JobDetail
+	Jobs      map[string]*JobDetail
 }
 
 type JobDetail struct {
@@ -45,4 +45,8 @@ type JobControlRequest struct {
 type JobListResponse struct {
 	Jobs  map[string]*JobStatus `json:"data"`
 	Count int                   `json:"count"`
+}
+
+type JobRequestWithName struct {
+	JobName string `json:"job_name" validate:"required"`
 }

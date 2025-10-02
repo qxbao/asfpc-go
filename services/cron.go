@@ -26,3 +26,48 @@ func (s *CronService) ListJobs(c echo.Context) error {
 		Count: len(jobsMap),
 	})
 }
+
+func (s *CronService) TriggerJob(c echo.Context) error {
+	dto := new(infras.JobRequestWithName)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"error": "Invalid request body: " + err.Error(),
+		})
+	}
+	if err := s.Cron.ForceRun(dto.JobName); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"error": "Failed to trigger job: " + err.Error(),
+		})
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+func (s *CronService) StopJob(c echo.Context) error {
+	dto := new(infras.JobRequestWithName)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"error": "Invalid request body: " + err.Error(),
+		})
+	}
+	if err := s.Cron.StopJob(dto.JobName); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"error": "Failed to stop job: " + err.Error(),
+		})
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+func (s *CronService) ResumeJob(c echo.Context) error {
+	dto := new(infras.JobRequestWithName)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"error": "Invalid request body: " + err.Error(),
+		})
+	}
+	if err := s.Cron.ResumeJob(dto.JobName); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"error": "Failed to resume job: " + err.Error(),
+		})
+	}
+	return c.NoContent(http.StatusOK)
+}
