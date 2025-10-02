@@ -18,11 +18,11 @@ class ProfileService:
       async with Database.get_session() as conn:
         query = (
           select(UserProfile)
-          .where(and_(UserProfile.is_analyzed, UserProfile.emb_profile))
+          .where(and_(UserProfile.is_analyzed, UserProfile.emb_profile.has()))
           .options(selectinload(UserProfile.emb_profile))
         )
         res = await conn.execute(query)
-        return res.scalars().all()
+        return list(res.scalars().all())
     except Exception:
       self.logger.exception("Exception occurred in get_training_profiles")
       return []

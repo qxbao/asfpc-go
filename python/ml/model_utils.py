@@ -11,7 +11,8 @@ import numpy as np
 import optuna
 import pandas as pd
 import xgboost as xgb
-from optuna.study.study import ObjectiveFuncType, Trial
+from optuna.study.study import ObjectiveFuncType
+from optuna.trial import Trial
 from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
 from xgboost.callback import LearningRateScheduler
@@ -26,8 +27,8 @@ class ModelUtility:
     self.logger = logging.getLogger("ModelUtility")
 
   @property
-  def model_path(self) -> str:
-    return str(Path.cwd() / "resources" / "models" / self.model_name)
+  def model_path(self) -> Path:
+    return Path.cwd() / "resources" / "models" / self.model_name
 
   @property
   def required_features(self) -> list[str]:
@@ -85,7 +86,7 @@ class ModelUtility:
     self, request_id: int | None, total_trials: int
   ) -> "UpdateRequestCallback":
     """Create a callback to update request status during Optuna trials."""
-    return UpdateRequestCallback(request_id, self.rs, self.logger, total_trials)
+    return UpdateRequestCallback(request_id, self.logger, total_trials)
 
   def get_optuna_objective(
     self, x: np.ndarray, y: np.ndarray, use_gpu: bool
@@ -144,9 +145,9 @@ class ModelUtility:
         gc.collect()
       except Exception as e:  # noqa: BLE001
         self.logger.warning(
-          "Trial failed with %s: %s", "GPU" if self.use_gpu else "CPU", e
+          "Trial failed with %s: %s", "GPU" if use_gpu else "CPU", e
         )
-        if self.use_gpu:
+        if use_gpu:
           gc.collect()
         return float("inf")
       else:
@@ -164,6 +165,7 @@ class ModelUtility:
         return current_year - int(parts[2])
     except ValueError:
       return np.nan
+    return np.nan
 
   def prepare_features(
     self, df: pd.DataFrame, scaler: StandardScaler | None, encoders: dict | None
@@ -176,6 +178,8 @@ class ModelUtility:
     x_emb = np.vstack(
       [self.validate_embedding(emb) for emb in df["embedding"].to_numpy()]
     )
+    if not encoders:
+      encoders = {}
     if not scaler:
       scaler = StandardScaler()
       x_emb = scaler.fit_transform(x_emb)
@@ -189,7 +193,7 @@ class ModelUtility:
         encoders[col] = LabelEncoder()
         x_cate.append(encoders[col].fit_transform(filled))
       else:
-        unseen_mask = ~filled.isin(self.encoders[col].classes_)
+        unseen_mask = ~filled.isin(encoders[col].classes_)
         if unseen_mask.any():
           self.logger.warning(
             "Found unseen labels in column '%s': %s", col, filled[unseen_mask].unique()
@@ -252,12 +256,11 @@ class UpdateRequestCallback:
   def __init__(
     self,
     request_id: int | None,
-    rs: RequestService,
     logger: logging.Logger,
     total_trials: int,
   ):
     self.request_id = request_id
-    self.rs = rs
+    self.rs = RequestService()
     self.trial_count = 0
     self.logger = logger
     self.total_trials = total_trials
@@ -270,6 +273,8 @@ class UpdateRequestCallback:
       self.logger.info(
         "Updating request %s, Progress: %.2f%%", self.request_id, progress * 100
       )
+    else:
+      return
     thread = threading.Thread(
       target=self.isolated_update, args=(progress, description), daemon=True
     )

@@ -89,7 +89,10 @@ class TaskNavigator:
     await rs.update_request(
       request_id, status=1, description="Preparing data for training...", progress=0.0
     )
-    model = PotentialCustomerScoringModel(request_id=request_id)
+    model = PotentialCustomerScoringModel(
+      request_id=request_id,
+      model_name=model_name
+    )
     self.logger.info("Loading trial: %s", str(trials))
     if trials is not None:
       model.trials = int(trials)
@@ -109,7 +112,7 @@ class TaskNavigator:
     await rs.update_request(
       request_id, status=1, progress=0.99, description="Saving model..."
     )
-    model.save_model(model_name)
+    model.save_model()
     self.logger.info("Model saved as: %s", model_name)
 
   async def predict(self) -> None:
@@ -128,13 +131,15 @@ class TaskNavigator:
 
     id_set = {int(x) for x in targets.split(",")}
     id_list = list(id_set)
-    model = PotentialCustomerScoringModel()
+    model = PotentialCustomerScoringModel(
+      model_name=model_name,
+    )
     model.load_model(model_name)
     ps = ProfileService()
     sem = asyncio.Semaphore(10)
 
     async def get_score(profile_id: int):
-      profile = await ps.get_profile_by_id(profile_id, include_account=True)
+      profile = await ps.get_profile_by_id(profile_id, with_embed=True)
       if not profile:
         return None
       input_df = pd.DataFrame(profile.to_df())

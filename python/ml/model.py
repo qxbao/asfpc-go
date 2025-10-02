@@ -1,8 +1,8 @@
+import datetime
 import gc
 import json
 import logging
 import pickle
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,7 @@ import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import r2_score, root_mean_squared_error
 from sklearn.model_selection import train_test_split
-from xgboost.callback import LearningRateScheduler
+from xgboost.callback import EarlyStopping
 
 from database.services.request import RequestService
 from ml.model_utils import ModelUtility
@@ -21,7 +21,8 @@ from ml.model_utils import ModelUtility
 class PotentialCustomerScoringModel:
   """Class for training, testing, and using a potential customer scoring model using XGBoost with Optuna hyperparameter tuning."""
 
-  def __init__(self, request_id: int | None = None):
+  def __init__(self, model_name: str, request_id: int | None = None):
+    self.util = ModelUtility(model_name)
     self.request_id = request_id
     self.trials = 20
     self.model = None
@@ -93,7 +94,7 @@ class PotentialCustomerScoringModel:
       timeout = 3600 if self.use_gpu else 7200
       study = optuna.create_study(
         direction="minimize",
-        study_name=f"xgboost_tuning_{'gpu' if self.use_gpu else 'cpu'}_{datetime.now(tz=datetime.UTC).strftime('%Y%m%d_%H%M%S')}",
+        study_name=f"xgboost_tuning_{'gpu' if self.use_gpu else 'cpu'}_{datetime.datetime.now(tz=datetime.UTC).strftime('%Y%m%d_%H%M%S')}",
         sampler=optuna.samplers.TPESampler(
           seed=42,
           n_startup_trials=8 if self.use_gpu else 10,
@@ -165,7 +166,6 @@ class PotentialCustomerScoringModel:
           "gamma": best_params["gamma"],
           "reg_alpha": best_params["reg_alpha"],
           "reg_lambda": best_params["reg_lambda"],
-          "lr_decay": best_params["lr_decay"],
           "n_estimators": best_params["n_estimators"],
         }
       except KeyError:
@@ -193,7 +193,6 @@ class PotentialCustomerScoringModel:
     params.update(self.util.recommended_params)
     self.train_params = params
     num_boost_round = 800
-    lr_decay = 0.95
 
     if auto_tune:
       try:
@@ -201,8 +200,6 @@ class PotentialCustomerScoringModel:
         if best_params:
           if "n_estimators" in best_params:
             num_boost_round = best_params.pop("n_estimators")
-          if "lr_decay" in best_params:
-            lr_decay = best_params.pop("lr_decay")
           params.update(best_params)
           self.logger.info("Using Optuna-tuned parameters: %s", best_params)
       except KeyError as e:
@@ -211,15 +208,12 @@ class PotentialCustomerScoringModel:
         )
 
     callbacks = []
-    if lr_decay is not None and "eta" in params:
-      eta = params.get("eta", 0.05)
-      lrdecay_callback = LearningRateScheduler(lambda epoch: eta * (lr_decay**epoch))
-      callbacks.append(lrdecay_callback)
-      self.logger.info("Using learning rate decay: %s (base eta: %s)", lr_decay, eta)
-    elif lr_decay is not None:
-      self.logger.warning(
-        "Learning rate decay requested but 'eta' not found in params, skipping decay"
-      )
+    callbacks.append(EarlyStopping(
+        rounds=30,
+        metric_name="rmse",
+        data_name="eval",
+        save_best=True
+    ))
 
     try:
       self.logger.info("Training model with %s", "GPU" if self.use_gpu else "CPU")
@@ -267,7 +261,7 @@ class PotentialCustomerScoringModel:
     model_dir = self.util.model_path
     self.model = xgb.Booster()
     try:
-      self.model.load_model(str(model_dir / "model.json"))
+      self.model.load_model(Path(model_dir / "model.json"))
     except FileNotFoundError as err:
       msg = "There's no model match this model name."
       raise FileNotFoundError(msg) from err
@@ -323,7 +317,7 @@ class PotentialCustomerScoringModel:
 
     if not hasattr(self, "test_results"):
       self.test_results = {}
-    self.test_results["saved_at"] = datetime.now(tz=datetime.UTC).isoformat()
+    self.test_results["saved_at"] = datetime.datetime.now(tz=datetime.UTC).isoformat()
     self.test_results["is_gpu"] = self.use_gpu
     self.test_results["train_params"] = (
       self.train_params if hasattr(self, "train_params") else {}
@@ -366,6 +360,6 @@ class PotentialCustomerScoringModel:
     except xgb.core.XGBoostError as e:
       self.logger.warning("GPU test failed: %s", e)
       self.logger.info("Switching to CPU for optimization")
-      self.use_gpu = False
+      return False
     else:
       return True
