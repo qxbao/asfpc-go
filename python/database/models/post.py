@@ -1,12 +1,15 @@
-from typing import TYPE_CHECKING
-from .base import Base
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, Integer, String, DateTime
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base
 
 if TYPE_CHECKING:
-  from .group import Group
   from .comment import Comment
+  from .group import Group
+
 
 class Post(Base):
   __tablename__ = "post"

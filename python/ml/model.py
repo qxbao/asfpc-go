@@ -1,569 +1,371 @@
-from datetime import datetime
+import gc
 import json
 import logging
-import os
+import pickle
+from datetime import datetime
+from pathlib import Path
 from typing import Any
-import pandas as pd
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import root_mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
-import xgboost as xgb
-from xgboost.callback import LearningRateScheduler
+
 import numpy as np
 import optuna
+import pandas as pd
+import xgboost as xgb
+from sklearn.metrics import r2_score, root_mean_squared_error
+from sklearn.model_selection import train_test_split
+from xgboost.callback import LearningRateScheduler
 
 from database.services.request import RequestService
+from ml.model_utils import ModelUtility
+
 
 class PotentialCustomerScoringModel:
-    model_path = os.path.join(os.getcwd(), "resources", "models")
-    required_features = [
-        "embedding",
-        "gender",
-        "locale",
-        "relationship_status"
-    ]
-    label_col = "gemini_score"
-    rs = RequestService()
-    
-    def __init__(self, request_id: int | None = None):
-        self.request_id = request_id
-        self.trials = 20
-        self.model = None
-        self.encoders = {}
-        self.scaler = None
-        self.embedding_dim = 768
-        self.logger = logging.getLogger(__name__)
-        self.use_gpu = True
+  """Class for training, testing, and using a potential customer scoring model using XGBoost with Optuna hyperparameter tuning."""
 
-    def _get_gpu_info(self) -> str:
-        """Get GPU information for logging"""
-        try:
-            import subprocess
-            result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,memory.free', 
-                                   '--format=csv,noheader,nounits'], 
-                                  capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                if lines and lines[0]:
-                    gpu_name, total_mem, free_mem = lines[0].split(', ')
-                    return f"GPU: {gpu_name}, Total Memory: {total_mem}MB, Free Memory: {free_mem}MB"
-            return "GPU information not available"
-        except Exception:
-            return "GPU information not available"
+  def __init__(self, request_id: int | None = None):
+    self.request_id = request_id
+    self.trials = 20
+    self.model = None
+    self.encoders = {}
+    self.scaler = None
+    self.embedding_dim = 768
+    self.logger = logging.getLogger(__name__)
+    self.use_gpu = True
+    self.rs = RequestService()
 
-    def _validate_embedding(self, emb):
-        try:
-            arr = np.array(emb, dtype=np.float32)
-            if arr.ndim == 1:
-                return arr
-            elif arr.ndim == 2:
-                return arr.flatten()
-            else:
-                raise ValueError
-        except Exception:
-            self.logger.warning("Invalid embedding found, replaced with zeros.")
-            return np.zeros(self.embedding_dim, dtype=np.float32)
+  def load_data(self, df: pd.DataFrame) -> None:
+    """
+    Load and preprocess data for training and testing.
 
-    def _prepare_features(self, df: pd.DataFrame) -> np.ndarray:
-        for feature in self.required_features:
-            if feature not in df.columns:
-                raise ValueError(f"Missing required feature: {feature}")
+    Args:
+        df (pd.DataFrame): Input DataFrame containing features (embedding, gender, locale, relationship_status) and labels (gemini_score).
 
-        X_emb = np.vstack([self._validate_embedding(emb) for emb in df["embedding"].values])
-        
-        if self.scaler is None:
-            self.scaler = StandardScaler()
-            X_emb = self.scaler.fit_transform(X_emb)
-        else:
-            X_emb = self.scaler.transform(X_emb)
-        
-        cat_features = ["gender", "locale", "relationship_status"]
-        X_cat = []
-        for col in cat_features:
-            filled = df[col].fillna("(null)")
-            if col not in self.encoders:
-                self.encoders[col] = LabelEncoder()
-                X_cat.append(self.encoders[col].fit_transform(filled))
-            else:
-                unseen_mask = ~filled.isin(self.encoders[col].classes_)
-                if unseen_mask.any():
-                    self.logger.warning(f"Found unseen labels in column '{col}': {filled[unseen_mask].unique()}")
-                    default_label = "(null)" if "(null)" in self.encoders[col].classes_ else self.encoders[col].classes_[0]
-                    filled = filled.where(~unseen_mask, default_label)
-                X_cat.append(self.encoders[col].transform(filled))
-        X_cat = np.vstack(X_cat).T
-        
-        def get_age(bday):
-            try:
-                parts = bday.split("/")
-                if len(parts) == 3:
-                    from datetime import date
-                    current_year = date.today().year
-                    return current_year - int(parts[2])
-            except Exception as _:
-                return np.nan
-        X_age = np.array(
-            df["birthday"].fillna("").infer_objects(copy=False).apply(get_age).fillna(-1).values
-        ).reshape(-1, 1)
-        X = np.hstack([X_emb, X_cat.astype(np.float32), X_age.astype(np.float32)])
-        return X.astype(np.float32)
+    """
+    label_col = self.util.label_column
+    df = df.copy()
+    df["score_bin"] = pd.qcut(df[label_col], q=5, duplicates="drop")
 
-    def load_data(self, df: pd.DataFrame, label_col="gemini_score"):
-        df = df.copy()
-        df['score_bin'] = pd.qcut(df[label_col], q=5, duplicates='drop')
+    try:
+      train_df, test_df = train_test_split(
+        df, test_size=0.2, random_state=42, stratify=df["score_bin"]
+      )
+      self.logger.info("Used stratified sampling for train/test split")
+    except ValueError as e:
+      self.logger.warning("Stratified sampling failed: %s. Using random split.", e)
+      train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
 
-        try:
-            train_df, test_df = train_test_split(
-                df, 
-                test_size=0.2, 
-                random_state=42,
-                stratify=df['score_bin']
-            )
-            self.logger.info("Used stratified sampling for train/test split")
-        except ValueError as e:
-            self.logger.warning(f"Stratified sampling failed: {e}. Using random split.")
-            train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
-        
-        train_df = train_df.drop('score_bin', axis=1)
-        test_df = test_df.drop('score_bin', axis=1)
-        
-        self.X_train = self._prepare_features(train_df)
-        self.y_train = train_df[label_col].values.astype(np.float32)  # float32 for consistency
-        self.X_test = self._prepare_features(test_df)
-        self.y_test = test_df[label_col].values.astype(np.float32)
+    train_df = train_df.drop("score_bin", axis=1)
+    test_df = test_df.drop("score_bin", axis=1)
 
-    def _get_base_params(self) -> dict:
-        """Get base parameters with automatic GPU/CPU selection"""
-        base = {
-            "objective": "reg:squarederror",
-            "eval_metric": "rmse",
-            "seed": 42,
+    self.X_train, scaler, encoders = self.util.prepare_features(
+      train_df, self.scaler, self.encoders
+    )
+    self.X_test, _, _ = self.util.prepare_features(test_df, scaler, encoders)
+
+    self.y_train = train_df[label_col].to_numpy().astype(np.float32)
+    self.y_test = test_df[label_col].to_numpy().astype(np.float32)
+    self.scaler = scaler
+    self.encoders = encoders
+
+  def auto_tune(self) -> dict[str, Any]:  # noqa: PLR0911
+    """
+    Automatically tune hyperparameters using Optuna. GPU availability is automatically detected.
+
+    Raises:
+        ValueError: If data is not loaded.
+
+    Returns:
+        params: dict[str, Any]: Best hyperparameters found.
+
+    """
+    if not hasattr(self, "X_train"):
+      msg = "Data not loaded. Call load_data first."
+      raise ValueError(msg)
+    if self.use_gpu:
+      self.use_gpu = self._test_gpu()
+
+    sample_size = min(self.util.get_sample_size(self.use_gpu), len(self.X_train))
+    x_sample = self.X_train[:sample_size]
+    y_sample = self.y_train[:sample_size]
+    objective = self.util.get_optuna_objective(x_sample, y_sample, self.use_gpu)
+
+    try:
+      n_trials = self.trials
+      timeout = 3600 if self.use_gpu else 7200
+      study = optuna.create_study(
+        direction="minimize",
+        study_name=f"xgboost_tuning_{'gpu' if self.use_gpu else 'cpu'}_{datetime.now(tz=datetime.UTC).strftime('%Y%m%d_%H%M%S')}",
+        sampler=optuna.samplers.TPESampler(
+          seed=42,
+          n_startup_trials=8 if self.use_gpu else 10,
+          n_ei_candidates=16 if self.use_gpu else 24,
+          multivariate=True,
+          group=True,
+        ),
+        pruner=optuna.pruners.MedianPruner(
+          n_startup_trials=3 if self.use_gpu else 5,
+          n_warmup_steps=8 if self.use_gpu else 10,
+          interval_steps=3 if self.use_gpu else 5,
+        ),
+      )
+
+      self.logger.info(
+        "Starting %s optimization with %d trials, timeout %ds",
+        "GPU" if self.use_gpu else "CPU",
+        n_trials,
+        timeout,
+      )
+      ur_callback = self.util.get_ur_callback(self.request_id, self.trials)
+
+      study.optimize(
+        objective,
+        n_trials=self.trials,
+        timeout=timeout,
+        show_progress_bar=False,
+        gc_after_trial=self.use_gpu,
+        callbacks=[ur_callback],
+      )
+
+      best_params = study.best_params
+      best_value = study.best_value
+      self.logger.info(
+        "Optuna %s optimization completed. Best RMSE: %.4f",
+        "GPU" if self.use_gpu else "CPU",
+        best_value,
+      )
+      self.logger.info("Best parameters: %s", best_params)
+
+      if best_value == float("inf"):
+        self.logger.warning(
+          "All %s trials failed (best RMSE is inf)", "GPU" if self.use_gpu else "CPU"
+        )
+        if self.use_gpu:
+          self.logger.info("Switching to CPU optimization due to GPU failure")
+          gc.collect()
+          self.use_gpu = False
+          return self.auto_tune()
+        self.logger.error(
+          "CPU trials also failed, returning empty parameters to use defaults"
+        )
+        return {}
+      if self.use_gpu:
+        gc.collect()
+      if not best_params:
+        self.logger.warning("Optuna returned empty parameters, using defaults")
+        return {}
+      try:
+        return {
+          "booster": best_params["booster"],
+          "grow_policy": best_params["grow_policy"],
+          "nthread": best_params["nthread"],
+          "eta": best_params["eta"],
+          "max_depth": best_params["max_depth"],
+          "min_child_weight": best_params["min_child_weight"],
+          "subsample": best_params["subsample"],
+          "colsample_bytree": best_params["colsample_bytree"],
+          "gamma": best_params["gamma"],
+          "reg_alpha": best_params["reg_alpha"],
+          "reg_lambda": best_params["reg_lambda"],
+          "lr_decay": best_params["lr_decay"],
+          "n_estimators": best_params["n_estimators"],
         }
-        if self.use_gpu:
-            base["device"] = "cuda"  # Modern device parameter (replaces deprecated "gpu")
-            base["tree_method"] = "hist"  # Use hist with device=cuda for GPU (XGBoost 2.0+)
-            base["max_bin"] = 256  # GPU-specific optimization
-            self.logger.info("Using GPU-optimized parameters (device=cuda, tree_method=hist, max_bin=256)")
-        else:
-            base["device"] = "cpu"
-            base["tree_method"] = "hist"
-            self.logger.info("Using CPU parameters (device=cpu, tree_method=hist)")
-        return base
+      except KeyError:
+        self.logger.exception("Missing expected parameter in best_params")
+        return {}
+    except Exception as e:
+      self.logger.warning(
+        "Optuna optimization failed with %s: %s", "GPU" if self.use_gpu else "CPU", e
+      )
+      if self.use_gpu:
+        self.logger.info(
+          "GPU optimization failed, falling back to CPU for hyperparameter optimization"
+        )
+        gc.collect()
+        self.use_gpu = False
+        return self.auto_tune()
+      self.logger.exception("CPU optimization also failed, using default parameters")
+      return {}
 
-    def auto_tune(self) -> dict[str, Any]:
-        if not hasattr(self, "X_train"):
-            raise ValueError("Data not loaded. Call load_data first.")
+  def train(self, auto_tune: bool = True):
+    dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
+    dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
 
-        # Test GPU availability before starting optimization
-        if self.use_gpu:
-            try:
-                test_matrix = xgb.DMatrix(self.X_train[:100], label=self.y_train[:100])
-                test_params = {"device": "cuda", "tree_method": "hist", "max_bin": 256}
-                xgb.train(test_params, test_matrix, num_boost_round=1, verbose_eval=False)
-                self.logger.info("GPU is available and working")
-                del test_matrix
-                import gc
-                gc.collect()
-            except Exception as e:
-                self.logger.warning(f"GPU test failed: {e}")
-                self.logger.info("Switching to CPU for optimization")
-                self.use_gpu = False
+    params = self.util.get_base_params(self.use_gpu)
+    params.update(self.util.recommended_params)
+    self.train_params = params
+    num_boost_round = 800
+    lr_decay = 0.95
 
-        base_params = self._get_base_params()
-        if self.use_gpu:
-            sample_size = min(9000, len(self.X_train))
-            self.logger.info(f"Using GPU optimization with {sample_size} samples")
-        else:
-            sample_size = min(12000, len(self.X_train))
-            self.logger.info(f"Using CPU optimization with {sample_size} samples")
-            
-        X_sample = self.X_train[:sample_size]
-        y_sample = self.y_train[:sample_size]
-        def objective(trial):
-            """Optuna objective function for hyperparameter optimization"""
-            try:
-                params = base_params.copy()
-                params.update({
-                    "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
-                    "grow_policy": trial.suggest_categorical("grow_policy", ["depthwise", "lossguide"]),
-                    "verbosity": 0,
-                    "nthread": trial.suggest_int("nthread", 1, 8),
-                    "eta": trial.suggest_float("eta", 0.03, 0.2, log=True),
-                    "max_depth": trial.suggest_int("max_depth", 4, 9),
-                    "min_child_weight": trial.suggest_int("min_child_weight", 1, 6),
-                    "subsample": trial.suggest_float("subsample", 0.7, 1.0),
-                    "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
-                    "gamma": trial.suggest_float("gamma", 0, 0.3),
-                    "reg_alpha": trial.suggest_float("reg_alpha", 0, 1.0),
-                    "reg_lambda": trial.suggest_float("reg_lambda", 0.8, 2.0),
-                    "lr_decay": trial.suggest_float("lr_decay", 0.8, 1)
-                })
-                self.logger.info(f"Trial parameters: {params}")
-                # Note: base_params already contains correct device settings
-                # No need to override here as base_params is copied above
-                
-                n_estimators = trial.suggest_int("n_estimators", 100, 500)
-                # Use regular DMatrix for hist tree method (both GPU and CPU)
-                dtrain = xgb.DMatrix(X_sample, label=y_sample, enable_categorical=False)
-                lrdecay_callback = LearningRateScheduler(
-                    lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
-                )
-
-                cv_results = xgb.cv(
-                    params,
-                    dtrain,
-                    num_boost_round=n_estimators,
-                    nfold=5 if self.use_gpu else 5,
-                    metrics=["rmse"],
-                    early_stopping_rounds=20,
-                    seed=42,
-                    shuffle=True,
-                    callbacks=[lrdecay_callback],
-                    verbose_eval=False,
-                )
-                
-                rmse_values = cv_results["test-rmse-mean"]
-                if isinstance(rmse_values, pd.Series):
-                    best_rmse = rmse_values.min() 
-                else:
-                    best_rmse = float(rmse_values)
-                
-                if self.use_gpu:
-                    import gc
-                    del dtrain
-                    gc.collect()
-                return best_rmse
-                  
-            except Exception as e:
-                self.logger.warning(f"Trial failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
-                if self.use_gpu:
-                    import gc
-                    gc.collect()
-                return float('inf')
-        
-        try:
-            n_trials = self.trials
-            timeout = 3600 if self.use_gpu else 7200
-            study = optuna.create_study(
-                direction="minimize",
-                study_name=f"xgboost_tuning_{'gpu' if self.use_gpu else 'cpu'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                sampler=optuna.samplers.TPESampler(
-                    seed=42,
-                    n_startup_trials=8 if self.use_gpu else 10,
-                    n_ei_candidates=16 if self.use_gpu else 24,
-                    multivariate=True,
-                    group=True,
-                ),
-                pruner=optuna.pruners.MedianPruner(
-                    n_startup_trials=3 if self.use_gpu else 5,
-                    n_warmup_steps=8 if self.use_gpu else 10,
-                    interval_steps=3 if self.use_gpu else 5
-                ),
-            )
-            
-            self.logger.info(f"Starting {'GPU' if self.use_gpu else 'CPU'} optimization with {n_trials} trials, timeout {timeout}s")
-            
-            class UpdateRequestCallback():
-                def __init__(self, request_id: int | None, rs: RequestService, logger):
-                    self.request_id = request_id
-                    self.rs = rs
-                    self.trial_count = 0
-                    self.logger = logger
-
-                def __call__(self, study: optuna.Study, trial: optuna.trial.FrozenTrial):
-                    self.trial_count += 1
-                    if self.request_id is not None:
-                        progress = min(0.9, self.trial_count / n_trials * 0.8 + 0.1)
-                        description = f"Optuna trial in progress: {self.trial_count}/{n_trials}"
-                        self.logger.info(f"Updating request {self.request_id}, Progress: {progress:.2%}")
-                        
-                        import threading
-                        
-                        def isolated_update():
-                            try:
-                                import asyncio
-                                from database.services.request import RequestService
-                                from database.database import Database
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                
-                                try:
-                                    async def update_request_operation(request_id: int, progress: float, description: str):
-                                        """Database operation to update request status"""
-                                        rs = RequestService()
-                                        db_session = Database.get_isolated_session()
-                                        return await rs.update_request(request_id,
-                                                                       session=db_session,
-                                                                       progress=progress,
-                                                                       description=description,
-                                                                       status=1)
-                                    if self.request_id is not None:
-                                        success = loop.run_until_complete(
-                                            update_request_operation(self.request_id, progress, description)
-                                        )
-                                        if success:
-                                            self.logger.info(f"Successfully updated request {self.request_id}")
-                                        else:
-                                            self.logger.warning(f"Request {self.request_id} not found")
-                                    else:
-                                        self.logger.debug("No request_id provided, skipping update")
-                                finally:
-                                    loop.close()
-                                    
-                            except Exception as e:
-                                self.logger.warning(f"Failed to update request status: {e}")
-                        thread = threading.Thread(target=isolated_update, daemon=True)
-                        thread.start()
-                        self.logger.debug(f"Started isolated update thread for request {self.request_id}")
-            callback = UpdateRequestCallback(self.request_id, self.rs, self.logger)
-            
-            study.optimize(
-                objective, 
-                n_trials=self.trials,
-                timeout=timeout,
-                show_progress_bar=False,
-                gc_after_trial=True if self.use_gpu else False,
-                callbacks=[callback]
-            )
-            
-            best_params = study.best_params
-            best_value = study.best_value
-            self.logger.info(f"Optuna {'GPU' if self.use_gpu else 'CPU'} optimization completed. Best RMSE: {best_value:.4f}")
-            self.logger.info(f"Best parameters: {best_params}")
-            
-            if best_value == float('inf'):
-                self.logger.warning(f"All {'GPU' if self.use_gpu else 'CPU'} trials failed (best RMSE is inf)")
-                if self.use_gpu:
-                    self.logger.info("Switching to CPU optimization due to GPU failure")
-                    import gc
-                    gc.collect()
-                    self.use_gpu = False
-                    return self.auto_tune()
-                else:
-                    self.logger.error("All CPU trials also failed, returning empty parameters to use defaults")
-                    return {}
-            
-            if self.use_gpu:
-                import gc
-                gc.collect()
-            
-            # Validate best_params before accessing keys
-            if not best_params:
-                self.logger.warning("Optuna returned empty parameters, using defaults")
-                return {}
-            
-            # Safely extract parameters with validation
-            try:
-                return {
-                    "booster": best_params["booster"],
-                    "grow_policy": best_params["grow_policy"],
-                    "nthread": best_params["nthread"],
-                    "eta": best_params["eta"],
-                    "max_depth": best_params["max_depth"],
-                    "min_child_weight": best_params["min_child_weight"],
-                    "subsample": best_params["subsample"],
-                    "colsample_bytree": best_params["colsample_bytree"],
-                    "gamma": best_params["gamma"],
-                    "reg_alpha": best_params["reg_alpha"],
-                    "reg_lambda": best_params["reg_lambda"],
-                    "lr_decay": best_params["lr_decay"],
-                    "n_estimators": best_params["n_estimators"],
-                }
-            except KeyError as e:
-                self.logger.error(f"Missing expected parameter in best_params: {e}")
-                return {}
-              
-        except Exception as e:
-            self.logger.warning(f"Optuna optimization failed with {'GPU' if self.use_gpu else 'CPU'}: {e}")
-            if self.use_gpu:
-                self.logger.info("GPU optimization failed, falling back to CPU for hyperparameter optimization")
-                import gc
-                gc.collect()
-                self.use_gpu = False
-                return self.auto_tune()
-            else:
-                self.logger.error("CPU optimization also failed, using default parameters")
-                return {}
-
-    def _execute_training(self, params: dict, dtrain: xgb.DMatrix, dval: xgb.DMatrix, 
-                         num_boost_round: int, callbacks: list | None = None) -> xgb.Booster:
-        """Helper method to execute XGBoost training with given parameters"""
-        return xgb.train(
-            params,
-            dtrain,
-            num_boost_round=num_boost_round,
-            evals=[(dtrain, "train"), (dval, "eval")],
-            early_stopping_rounds=20,
-            verbose_eval=False,
-            callbacks=callbacks if callbacks else None
+    if auto_tune:
+      try:
+        best_params = self.auto_tune()
+        if best_params:
+          if "n_estimators" in best_params:
+            num_boost_round = best_params.pop("n_estimators")
+          if "lr_decay" in best_params:
+            lr_decay = best_params.pop("lr_decay")
+          params.update(best_params)
+          self.logger.info("Using Optuna-tuned parameters: %s", best_params)
+      except KeyError as e:
+        self.logger.warning(
+          "Optuna tuning failed due to missing key, using default parameters: %s", e
         )
 
-    def train(self, auto_tune: bool = True):
-        # Use regular DMatrix for hist tree method (both GPU and CPU)
-        dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
-        dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
+    callbacks = []
+    if lr_decay is not None and "eta" in params:
+      eta = params.get("eta", 0.05)
+      lrdecay_callback = LearningRateScheduler(lambda epoch: eta * (lr_decay**epoch))
+      callbacks.append(lrdecay_callback)
+      self.logger.info("Using learning rate decay: %s (base eta: %s)", lr_decay, eta)
+    elif lr_decay is not None:
+      self.logger.warning(
+        "Learning rate decay requested but 'eta' not found in params, skipping decay"
+      )
 
-        params = self._get_base_params()
-        params.update({
-            "booster": "gbtree",           # Standard gradient boosting
-            "grow_policy": "lossguide",    # Loss-guided growth for better accuracy
-            "eta": 0.05,                   # Lower learning rate for smoother convergence
-            "max_depth": 5,                # Moderate depth to prevent overfitting on small score range
-            "min_child_weight": 3,         # Higher to reduce noise in probability predictions
-            "subsample": 0.85,             # High subsample for stability
-            "colsample_bytree": 0.85,      # High feature sampling for robustness
-            "gamma": 0.1,                  # Small regularization for pruning
-            "reg_alpha": 0.3,              # L1 regularization to handle sparse features (embeddings)
-            "reg_lambda": 1.2,             # L2 regularization for smooth predictions
-            "nthread": 4,                  # Parallel threads
-        })
-        self.train_params = params
-        
-        num_boost_round = 800  # More rounds with lower learning rate
-        lr_decay = 0.95  # Default learning rate decay for progressive learning
-        
-        if auto_tune:
-            try:
-                best_params = self.auto_tune()
-                # Only update if auto_tune returned valid parameters
-                if best_params:
-                    if "n_estimators" in best_params:
-                        num_boost_round = best_params.pop("n_estimators")
-                    if "lr_decay" in best_params:
-                        lr_decay = best_params.pop("lr_decay")
-                    params.update(best_params)
-                    self.logger.info(f"Using Optuna-tuned parameters: {best_params}")
-            except Exception as e:
-                self.logger.warning(f"Optuna tuning failed, using default parameters: {e}")
+    try:
+      self.logger.info("Training model with %s", "GPU" if self.use_gpu else "CPU")
+      self.model = self._execute_training(
+        params, dtrain, dval, num_boost_round, callbacks
+      )
+      self.logger.info("Model training completed successfully")
+    except Exception as e:
+      if self.use_gpu:
+        self.logger.warning("GPU training failed: %s", e)
+        self.logger.info("Falling back to CPU training")
+        self.use_gpu = False
+        params.update(self.util.get_base_params(self.use_gpu))
+        self.model = self._execute_training(
+          params, dtrain, dval, num_boost_round, callbacks
+        )
+        self.logger.info("Model training completed successfully with CPU fallback")
+      else:
+        self.logger.exception("CPU training also failed")
+        raise
 
-        # Setup callbacks with validation for eta parameter
-        callbacks = []
-        if lr_decay is not None and "eta" in params:
-            eta = params.get("eta", 0.05)  # Fallback to default if missing
-            lrdecay_callback = LearningRateScheduler(
-                lambda epoch: eta * (lr_decay ** epoch)
-            )
-            callbacks.append(lrdecay_callback)
-            self.logger.info(f"Using learning rate decay: {lr_decay} (base eta: {eta})")
-        elif lr_decay is not None:
-            self.logger.warning("Learning rate decay requested but 'eta' not found in params, skipping decay")
+  def test(self):
+    if self.model is None:
+      msg = "No model to test"
+      raise ValueError(msg)
 
-        try:
-            self.logger.info(f"Training model with {'GPU' if self.use_gpu else 'CPU'}")
-            self.model = self._execute_training(params, dtrain, dval, num_boost_round, callbacks)
-            self.logger.info("Model training completed successfully")
-              
-        except Exception as e:
-            if self.use_gpu:
-                self.logger.warning(f"GPU training failed: {e}")
-                self.logger.info("Falling back to CPU training")
-                self.use_gpu = False
-                params.update(self._get_base_params())
-                
-                self.model = self._execute_training(params, dtrain, dval, num_boost_round, callbacks)
-                self.logger.info("Model training completed successfully with CPU fallback")
-            else:
-                self.logger.error(f"CPU training also failed: {e}")
-                raise e
-        
-    def test(self):
-        if self.model is None:
-            raise ValueError("No model to test")
+    if not hasattr(self, "X_test") or not hasattr(self, "y_test"):
+      msg = "Test data not loaded"
+      raise ValueError(msg)
 
-        if not hasattr(self, 'X_test') or not hasattr(self, 'y_test'):
-            raise ValueError("Test data not loaded")
+    dtest = xgb.DMatrix(self.X_test)
+    y_pred = self.model.predict(dtest)
+    rmse = root_mean_squared_error(self.y_test, y_pred)
 
-        dtest = xgb.DMatrix(self.X_test)
-        y_pred = self.model.predict(dtest)
-        rmse = root_mean_squared_error(self.y_test, y_pred)
+    self.test_results = {
+      "rmse": rmse,
+      "r2": r2_score(self.y_test, y_pred),
+      "mae": np.mean(np.abs(self.y_test - y_pred)),
+    }
+    self.test_results = self.util.convert_numpy_types(self.test_results)
+    return self.test_results
 
-        self.test_results = {
-            "rmse": rmse,
-            "r2": r2_score(self.y_test, y_pred),
-            "mae": np.mean(np.abs(self.y_test - y_pred)),
-        }
-        self.test_results = self._convert_numpy_types(self.test_results)
-        return self.test_results
-      
-    def load_model(self, model_name: str):
-        model_dir = os.path.join(self.model_path, model_name)
-        
-        self.model = xgb.Booster()
-        try:
-            self.model.load_model(os.path.join(model_dir, "model.json"))
-        except Exception:
-            raise ValueError("There's no model match this model name.")
-        
-        import pickle
-        encoders_path = os.path.join(model_dir, "encoders.pkl")
-        if os.path.exists(encoders_path):
-            with open(encoders_path, "rb") as f:
-                self.encoders = pickle.load(f)
-            self.logger.info(f"Encoders loaded from {encoders_path}")
-        else:
-            self.logger.warning(f"Encoders file not found at {encoders_path}. Model loaded without encoders.")
-            self.encoders = {}
-        
-        scaler_path = os.path.join(model_dir, "scalers.pkl")
-        if os.path.exists(scaler_path):
-            with open(scaler_path, "rb") as f:
-                self.scaler = pickle.load(f)
-            self.logger.info(f"Scaler loaded from {scaler_path}")
-        else:
-            self.logger.warning(f"Scaler file not found at {scaler_path}. Model loaded without scaler.")
-            self.scaler = None
-            
-        self.logger.info(f"Model loaded from {model_dir}")
-      
-    def predict(self, df: pd.DataFrame) -> Any:
-        if self.model is None:
-            raise ValueError("No model found")
-        X = self._prepare_features(df)
-        dmatrix = xgb.DMatrix(X)
-        predictions = self.model.predict(dmatrix)
-        return self._convert_numpy_types(predictions)
-    
-    def _convert_numpy_types(self, obj) -> Any:
-        """Recursively convert numpy types to Python native types for JSON serialization"""
-        if isinstance(obj, dict):
-            return {key: self._convert_numpy_types(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [self._convert_numpy_types(item) for item in obj]
-        elif isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, (np.bool_, bool)):
-            return bool(obj)
-        else:
-            return obj
-      
-    def save_model(self, model_name: str):
-        if self.model is None:
-            raise ValueError("No model to save")
-        model_dir = os.path.join(self.model_path, model_name)
-        os.makedirs(model_dir, exist_ok=True)
-        
-        self.model.save_model(os.path.join(model_dir, "model.json"))
-        
-        import pickle
-        with open(os.path.join(model_dir, "encoders.pkl"), "wb") as f:
-            pickle.dump(self.encoders, f)
-        
-        if self.scaler is not None:
-            with open(os.path.join(model_dir, "scalers.pkl"), "wb") as f:
-                pickle.dump(self.scaler, f)
-        
-        if not hasattr(self, 'test_results'):
-            self.test_results = {}
-        self.test_results["saved_at"] = datetime.now().isoformat()
-        self.test_results["is_gpu"] = self.use_gpu
-        self.test_results["train_params"] = self.train_params if hasattr(self, 'train_params') else {}
-        metadata = self._convert_numpy_types(self.test_results)
-        
-        with open(os.path.join(model_dir, "metadata.json"), "w") as f:
-            json.dump(metadata, f, indent=2)
-            
-        self.logger.info(f"Model saved to {model_dir}")
+  def load_model(self, model_name: str):
+    self.util = ModelUtility(model_name)
+    model_dir = self.util.model_path
+    self.model = xgb.Booster()
+    try:
+      self.model.load_model(str(model_dir / "model.json"))
+    except FileNotFoundError as err:
+      msg = "There's no model match this model name."
+      raise FileNotFoundError(msg) from err
+    encoders_path = model_dir / "encoders.pkl"
+    if Path(encoders_path).exists():
+      with Path.open(encoders_path, "rb") as f:
+        self.encoders = pickle.load(f)  # noqa: S301
+      self.logger.info("Encoders loaded from %s", encoders_path)
+    else:
+      self.logger.warning(
+        "Encoders file not found at %s. Model loaded without encoders.", encoders_path
+      )
+      self.encoders = {}
+
+    scaler_path = model_dir / "scalers.pkl"
+    if Path(scaler_path).exists():
+      with Path.open(scaler_path, "rb") as f:
+        self.scaler = pickle.load(f)  # noqa: S301
+      self.logger.info("Scaler loaded from %s", scaler_path)
+    else:
+      self.logger.warning(
+        "Scaler file not found at %s. Model loaded without scaler.", scaler_path
+      )
+      self.scaler = None
+    self.logger.info("Model loaded from %s", model_dir)
+
+  def predict(self, df: pd.DataFrame) -> Any:
+    if self.model is None:
+      err_msg = "No model found"
+      raise ValueError(err_msg)
+    x, scaler, encoders = self.util.prepare_features(df, self.scaler, self.encoders)
+    self.scaler = scaler
+    self.encoders = encoders
+    dmatrix = xgb.DMatrix(x)
+    predictions = self.model.predict(dmatrix)
+    return self.util.convert_numpy_types(predictions)
+
+  def save_model(self):
+    if self.model is None:
+      err_msg = "No model to save"
+      raise ValueError(err_msg)
+    model_dir = self.util.model_path
+    Path.mkdir(model_dir, exist_ok=True)
+
+    self.model.save_model(str(model_dir / "model.json"))
+
+    with Path.open(model_dir / "encoders.pkl", "wb") as f:
+      pickle.dump(self.encoders, f)
+
+    if self.scaler is not None:
+      with Path.open(model_dir / "scalers.pkl", "wb") as f:
+        pickle.dump(self.scaler, f)
+
+    if not hasattr(self, "test_results"):
+      self.test_results = {}
+    self.test_results["saved_at"] = datetime.now(tz=datetime.UTC).isoformat()
+    self.test_results["is_gpu"] = self.use_gpu
+    self.test_results["train_params"] = (
+      self.train_params if hasattr(self, "train_params") else {}
+    )
+    metadata = self.util.convert_numpy_types(self.test_results)
+    with Path.open(model_dir / "metadata.json", "w") as f:
+      json.dump(metadata, f, indent=2)
+    self.logger.info("Model saved to %s", model_dir)
+
+  def _execute_training(
+    self,
+    params: dict,
+    dtrain: xgb.DMatrix,
+    dval: xgb.DMatrix,
+    num_boost_round: int,
+    callbacks: list | None = None,
+  ) -> xgb.Booster:
+    """Helper method to execute XGBoost training with given parameters"""
+    return xgb.train(
+      params,
+      dtrain,
+      num_boost_round=num_boost_round,
+      evals=[(dtrain, "train"), (dval, "eval")],
+      early_stopping_rounds=20,
+      verbose_eval=False,
+      callbacks=callbacks if callbacks else None,
+    )
+
+  def _test_gpu(self) -> bool:
+    if not hasattr(self, "X_train") or not hasattr(self, "y_train"):
+      err_msg = "Data not loaded. Call load_data() first."
+      raise ValueError(err_msg)
+    try:
+      test_matrix = xgb.DMatrix(self.X_train[:100], label=self.y_train[:100])
+      test_params = {"device": "cuda", "tree_method": "hist", "max_bin": 256}
+      xgb.train(test_params, test_matrix, num_boost_round=1, verbose_eval=False)
+      self.logger.info("GPU is available and working")
+      del test_matrix
+      gc.collect()
+    except xgb.core.XGBoostError as e:
+      self.logger.warning("GPU test failed: %s", e)
+      self.logger.info("Switching to CPU for optimization")
+      self.use_gpu = False
+    else:
+      return True

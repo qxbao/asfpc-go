@@ -1,13 +1,18 @@
 import logging
-from database.models import Request
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from database.database import Database
+from database.models import Request
+
 
 class RequestService:
   def __init__(self):
     self.logger = logging.getLogger("RequestService")
 
-  async def update_request(self, request_id: int, session: AsyncSession | None = None, **kwargs) -> bool:
+  async def update_request(
+    self, request_id: int, session: AsyncSession | None = None, **kwargs
+  ) -> bool:
     try:
       if not session:
         session = Database.get_session()
@@ -20,7 +25,8 @@ class RequestService:
           setattr(request, key, value)
         await conn.commit()
         await conn.refresh(request)
-        return True
-    except Exception as e:
-      self.logger.exception("Failed to update request: %s", str(e))
+    except Exception:
+      self.logger.exception("Failed to update request: %s", request_id)
       return False
+    else:
+      return True

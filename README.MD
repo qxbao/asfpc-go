@@ -1,7 +1,7 @@
 # ASFPC - Go
 
 ![Build Status](https://github.com/qxbao/asfpc-go/actions/workflows/go.yml/badge.svg)
-
+![Ruff Lint](https://github.com/qxbao/asfpc-go/actions/workflows/lint.yml/badge.svg)
 
 **A**utomated **S**ystem for **F**inding **P**otential **C**ustomers
 
