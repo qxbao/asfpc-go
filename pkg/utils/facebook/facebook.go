@@ -1,4 +1,4 @@
-package services
+package facebook
 
 import (
 	"crypto/md5"

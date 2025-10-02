@@ -1,4 +1,4 @@
-package services
+package analysis
 
 import (
 	"context"
@@ -13,8 +13,9 @@ import (
 	"github.com/qxbao/asfpc/pkg/async"
 	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils"
-	"go.uber.org/zap"
+	"github.com/qxbao/asfpc/pkg/utils/facebook"
 )
+
 
 type ScanService struct {
 	Server infras.Server
@@ -57,12 +58,12 @@ type processCommentInput struct {
 	PostID    int32
 }
 
-var logger *zap.SugaredLogger = lg.GetLogger("ScanningService")
-
 type GroupScanSuccess struct {
 	AccountID int32
 	Result    []PostScanResult
 }
+
+var logger = lg.GetLogger("ScanService")
 
 func (s ScanService) ScanAllGroups() {
 	logger.Info("Starting cron task [ScanAllGroups]")
@@ -163,7 +164,7 @@ func (s ScanService) processGroups(input processGroupInput) GroupScanSuccess {
 func (s ScanService) processPosts(input processPostsInput) PostScanResult {
 	logger.Infof("Scanning posts for group %s (ID: %d)", input.Group.GroupName, input.Group.ID)
 	feedLimit, _ := strconv.ParseInt(s.Server.GetConfig(input.Context, "FACEBOOK_GROUP_FEED_LIMIT", "20"), 10, 32)
-	fg := FacebookGraph{
+	fg := facebook.FacebookGraph{
 		AccessToken: input.Group.AccessToken.String,
 	}
 
@@ -286,7 +287,7 @@ func (s ScanService) processComment(input processCommentInput) bool {
 	if input.Comment.ID == nil || len(*input.Comment.From.ID) > 15 {
 		panic(fmt.Errorf("anonymous comment or invalid comment ID: %v", input.Comment.ID))
 	}
-	
+
 	profile, err := s.Server.Queries.CreateProfile(input.Context, db.CreateProfileParams{
 		FacebookID:  input.Comment.From.ID.String(),
 		Name:        utils.ToNullString(input.Comment.From.Name),
@@ -384,7 +385,7 @@ func (s ScanService) processProfileWithSemaphore(input processProfileInput) bool
 }
 
 func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesToScanRow) error {
-	fg := FacebookGraph{
+	fg := facebook.FacebookGraph{
 		AccessToken: profile.AccessToken.String,
 	}
 	fetchedProfile, err := fg.GetUserDetails(profile.FacebookID, &map[string]string{})

@@ -51,6 +51,10 @@ func NewServer(database *sql.DB, queries *db.Queries) *Server {
 	}
 }
 
+func NewRawServer(s *Server) *infras.Server {
+	return s.Server
+}
+
 func (s *Server) RegisterHooks(lc fx.Lifecycle) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -94,7 +98,7 @@ func (s *Server) RegisterHooks(lc fx.Lifecycle) {
 }
 
 var ServerModule = fx.Module("Server",
-	fx.Provide(NewServer),
+	fx.Provide(NewServer, NewRawServer),
 	fx.Invoke(func(s *Server, lc fx.Lifecycle) {
 		s.RegisterHooks(lc)
 	}),

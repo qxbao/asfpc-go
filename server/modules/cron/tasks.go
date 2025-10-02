@@ -5,31 +5,34 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/services"
+	analysis "github.com/qxbao/asfpc/server/modules/cron/tasks/analysis"
+	"github.com/qxbao/asfpc/server/modules/cron/tasks/ml"
+	scan "github.com/qxbao/asfpc/server/modules/cron/tasks/scan"
 )
 
 type Task struct {
-	Def gocron.JobDefinition
-	Fn  gocron.Task
+	Name string
+	Def  gocron.JobDefinition
+	Fn   gocron.Task
 }
 
-func CollectTasks(s *infras.Server) []Task {
-	return []Task{
-		scanGroups(s),
-		scanProfiles(s),
-		geminiScoring(s),
-		embedProfiles(s),
-		scoreProfiles(s),
-	}
+// Any new tasks must be added here
+var TaskFuncs = map[string]func(s *infras.Server, name string) Task{
+	"Scan Groups":  scanGroups,
+	"Scan Profiles": scanProfiles,
+	"Gemini Scoring": geminiScoring,
+	"Embed Profiles": embedProfiles,
+	"Score Profiles": scoreProfiles,
 }
 
-func scanGroups(s *infras.Server) Task {
+func scanGroups(s *infras.Server, name string) Task {
 	return Task{
+		Name: name,
 		Def: gocron.DurationJob(
 			10 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
-			scanService := &services.ScanService{
+			scanService := &scan.ScanService{
 				Server: *server,
 			}
 			scanService.ScanAllGroups()
@@ -37,13 +40,14 @@ func scanGroups(s *infras.Server) Task {
 	}
 }
 
-func scanProfiles(s *infras.Server) Task {
+func scanProfiles(s *infras.Server, name string) Task {
 	return Task{
+		Name: name,
 		Def: gocron.DurationJob(
 			10 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
-			scanService := &services.ScanService{
+			scanService := &scan.ScanService{
 				Server: *server,
 			}
 			scanService.ScanAllProfiles()
@@ -51,13 +55,14 @@ func scanProfiles(s *infras.Server) Task {
 	}
 }
 
-func geminiScoring(s *infras.Server) Task {
+func geminiScoring(s *infras.Server, name string) Task {
 	return Task{
+		Name: name,
 		Def: gocron.DurationJob(
 			1 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
-			analysisService := &services.AnalysisService{
+			analysisService := &analysis.AnalysisService{
 				Server: server,
 			}
 			analysisService.GeminiScoringCronjob()
@@ -65,13 +70,14 @@ func geminiScoring(s *infras.Server) Task {
 	}
 }
 
-func embedProfiles(s *infras.Server) Task {
+func embedProfiles(s *infras.Server, name string) Task {
 	return Task{
+		Name: name,
 		Def: gocron.DurationJob(
 			1 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
-			analysisService := &services.AnalysisService{
+			analysisService := &analysis.AnalysisService{
 				Server: server,
 			}
 			analysisService.GeminiEmbeddingCronjob()
@@ -79,13 +85,14 @@ func embedProfiles(s *infras.Server) Task {
 	}
 }
 
-func scoreProfiles(s *infras.Server) Task {
+func scoreProfiles(s *infras.Server, name string) Task {
 	return Task{
+		Name: name,
 		Def: gocron.DurationJob(
 			1 * time.Minute,
 		),
 		Fn: gocron.NewTask(func(server *infras.Server) {
-			mlService := &services.MLService{
+			mlService := &ml.MLService{
 				Server: server,
 			}
 			mlService.ScoreProfilesCronjob()

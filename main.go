@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/qxbao/asfpc/routes"
+	"github.com/qxbao/asfpc/server/modules/routes"
 	"github.com/qxbao/asfpc/server"
 	"github.com/qxbao/asfpc/server/modules/cron"
 	"github.com/qxbao/asfpc/server/modules/database"

@@ -10,12 +10,16 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
-	"github.com/qxbao/asfpc/infras"	
+	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/pkg/utils/facebook"
+	lg "github.com/qxbao/asfpc/pkg/logger"
 )
 
 type AccountService struct {
 	Server *infras.Server
 }
+
+var logger = lg.GetLogger("RouterService")
 
 func (s *AccountService) GetAccountStats(c echo.Context) error {
 	queries := s.Server.Queries
@@ -47,7 +51,7 @@ func (s *AccountService) AddAccount(c echo.Context) error {
 		})
 	}
 
-	ua := GenerateModernChromeUA()
+	ua := facebook.GenerateModernChromeUA()
 
 	params := db.CreateAccountParams{
 		Email:       *dto.Email,
@@ -216,7 +220,7 @@ func (s *AccountService) GenAccountsAT(c echo.Context) error {
 				errorIds <- accountId
 				return
 			}
-			fg := FacebookGraph{}
+			fg := facebook.FacebookGraph{}
 			username := account.Email
 			if username == "" {
 				username = account.Username
