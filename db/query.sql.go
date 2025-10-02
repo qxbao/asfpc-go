@@ -166,13 +166,18 @@ func (q *Queries) CreateEmbeddedProfile(ctx context.Context, arg CreateEmbeddedP
 const createGeminiKey = `-- name: CreateGeminiKey :one
 INSERT INTO public.gemini_key (api_key)
 VALUES ($1)
-RETURNING id, api_key, token_used
+RETURNING id, api_key, token_used, updated_at
 `
 
 func (q *Queries) CreateGeminiKey(ctx context.Context, apiKey string) (GeminiKey, error) {
 	row := q.db.QueryRowContext(ctx, createGeminiKey, apiKey)
 	var i GeminiKey
-	err := row.Scan(&i.ID, &i.ApiKey, &i.TokenUsed)
+	err := row.Scan(
+		&i.ID,
+		&i.ApiKey,
+		&i.TokenUsed,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
@@ -659,20 +664,23 @@ func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error
 }
 
 const getGeminiKeyForUse = `-- name: GetGeminiKeyForUse :one
-SELECT id, api_key, token_used FROM public.gemini_key WHERE token_used = (
-  SELECT MIN(token_used) FROM public.gemini_key
-) LIMIT 1
+SELECT id, api_key, token_used, updated_at FROM public.gemini_key ORDER BY updated_at ASC NULLS LAST LIMIT 1
 `
 
 func (q *Queries) GetGeminiKeyForUse(ctx context.Context) (GeminiKey, error) {
 	row := q.db.QueryRowContext(ctx, getGeminiKeyForUse)
 	var i GeminiKey
-	err := row.Scan(&i.ID, &i.ApiKey, &i.TokenUsed)
+	err := row.Scan(
+		&i.ID,
+		&i.ApiKey,
+		&i.TokenUsed,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
 const getGeminiKeys = `-- name: GetGeminiKeys :many
-SELECT id, api_key, token_used FROM public.gemini_key
+SELECT id, api_key, token_used, updated_at FROM public.gemini_key
 `
 
 func (q *Queries) GetGeminiKeys(ctx context.Context) ([]GeminiKey, error) {
@@ -684,7 +692,12 @@ func (q *Queries) GetGeminiKeys(ctx context.Context) ([]GeminiKey, error) {
 	var items []GeminiKey
 	for rows.Next() {
 		var i GeminiKey
-		if err := rows.Scan(&i.ID, &i.ApiKey, &i.TokenUsed); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApiKey,
+			&i.TokenUsed,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1837,9 +1850,10 @@ func (q *Queries) UpdateGeminiAnalysisProfile(ctx context.Context, arg UpdateGem
 
 const updateGeminiKeyUsage = `-- name: UpdateGeminiKeyUsage :one
 UPDATE public.gemini_key
-SET token_used = token_used + $2
+SET token_used = token_used + $2,
+updated_at = NOW()
 WHERE api_key = $1
-RETURNING id, api_key, token_used
+RETURNING id, api_key, token_used, updated_at
 `
 
 type UpdateGeminiKeyUsageParams struct {
@@ -1850,7 +1864,12 @@ type UpdateGeminiKeyUsageParams struct {
 func (q *Queries) UpdateGeminiKeyUsage(ctx context.Context, arg UpdateGeminiKeyUsageParams) (GeminiKey, error) {
 	row := q.db.QueryRowContext(ctx, updateGeminiKeyUsage, arg.ApiKey, arg.TokenUsed)
 	var i GeminiKey
-	err := row.Scan(&i.ID, &i.ApiKey, &i.TokenUsed)
+	err := row.Scan(
+		&i.ID,
+		&i.ApiKey,
+		&i.TokenUsed,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 

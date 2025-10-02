@@ -199,6 +199,7 @@ CREATE TABLE IF NOT EXISTS public.gemini_key
     id SERIAL,
     api_key text COLLATE pg_catalog."default" NOT NULL,
     token_used bigint NOT NULL DEFAULT 0,
+    updated_at timestamp without time zone DEFAULT now(),
     CONSTRAINT gemini_key_pkey PRIMARY KEY (id)
 );
 

@@ -69,6 +69,7 @@ type GeminiKey struct {
 	ID        int32
 	ApiKey    string
 	TokenUsed int64
+	UpdatedAt sql.NullTime
 }
 
 type Group struct {

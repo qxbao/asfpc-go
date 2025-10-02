@@ -360,9 +360,7 @@ SELECT COUNT(*) as total_logs FROM public.log;
 SELECT * FROM public.gemini_key;
 
 -- name: GetGeminiKeyForUse :one
-SELECT * FROM public.gemini_key WHERE token_used = (
-  SELECT MIN(token_used) FROM public.gemini_key
-) LIMIT 1;
+SELECT * FROM public.gemini_key ORDER BY updated_at ASC NULLS LAST LIMIT 1;
 
 -- name: CountGeminiKeys :one
 SELECT COUNT(*) as total_gemini_keys FROM public.gemini_key;
@@ -377,7 +375,8 @@ DELETE FROM public.gemini_key WHERE id = $1;
 
 -- name: UpdateGeminiKeyUsage :one
 UPDATE public.gemini_key
-SET token_used = token_used + $2
+SET token_used = token_used + $2,
+updated_at = NOW()
 WHERE api_key = $1
 RETURNING *;
 

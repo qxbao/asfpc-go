@@ -57,15 +57,12 @@ func (gs *GenerativeService) GenerateEmbedding(content string) ([]float32, error
 }
 
 func (gs *GenerativeService) SaveUsage(ctx context.Context, queries *db.Queries) error {
-	if gs.Usage > 0 {
-		_, err := queries.UpdateGeminiKeyUsage(ctx, db.UpdateGeminiKeyUsageParams{
-			ApiKey:    gs.APIKey,
-			TokenUsed: gs.Usage,
-		})
-		if err != nil {
-			return err
-		}
-		return nil
+	_, err := queries.UpdateGeminiKeyUsage(ctx, db.UpdateGeminiKeyUsageParams{
+		ApiKey:    gs.APIKey,
+		TokenUsed: gs.Usage,
+	})
+	if err != nil {
+		return err
 	}
 	return nil
 }
