@@ -29,7 +29,7 @@ class PotentialCustomerScoringModel:
     self.scaler = None
     self.embedding_dim = 768
     self.logger = logging.getLogger(__name__)
-    self.use_gpu = True
+    self.use_gpu = self._test_gpu()
     self.rs = RequestService()
 
   def load_data(self, df: pd.DataFrame) -> None:
@@ -218,7 +218,6 @@ class PotentialCustomerScoringModel:
 
     params = self.util.get_base_params(self.use_gpu)
     params.update(self.util.recommended_params)
-    self.train_params = params
     num_boost_round = 800
 
     if auto_tune:
@@ -244,6 +243,7 @@ class PotentialCustomerScoringModel:
 
     try:
       self.logger.info("Training model with %s", "GPU" if self.use_gpu else "CPU")
+      self.train_params = params
       self.model = self._execute_training(
         params, dtrain, dval, num_boost_round, callbacks
       )
