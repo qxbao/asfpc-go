@@ -16,6 +16,7 @@ from optuna.study.study import ObjectiveFuncType
 from optuna.trial import Trial
 from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
+from sklearn.metrics import r2_score, root_mean_squared_error
 from xgboost.callback import LearningRateScheduler
 
 from database.database import Database
@@ -170,7 +171,6 @@ class ModelUtility:
       today = datetime.datetime.now(tz=datetime.UTC).date()
       age = (today - birth_date.date()).days / 365.25
       if not (0 <= age <= self.MAX_AGE):
-        self.logger.warning("Unrealistic age %d from birthday %s", age, birthday)
         return np.nan
     except (ValueError, TypeError):
       return np.nan
@@ -344,3 +344,75 @@ class UpdateRequestCallback:
         loop.close()
     except RuntimeError:
       self.logger.exception("Failed to update request status")
+
+  def calculate_test_results(
+    self,
+    y_test: np.ndarray,
+    y_pred: np.ndarray,
+    model: xgb.Booster
+  ) -> dict[str, Any]:
+    """
+    Calculate comprehensive test results including metrics, predictions stats,
+    residual analysis, and feature importance.
+
+    Args:
+        y_test: True target values
+        y_pred: Predicted values
+        model: Trained XGBoost model
+
+    Returns:
+        Dictionary containing all test metrics and statistics
+
+    """
+    self.logger.info(
+        "Target value stats - min: %.6f, max: %.6f, mean: %.6f, zeros: %d/%d",
+        y_test.min(), y_test.max(), y_test.mean(),
+        np.sum(y_test == 0), len(y_test)
+    )
+
+    epsilon = 1e-10
+
+    # RMSLE calculation (handles zeros by using log1p)
+    y_test_pos = np.maximum(y_test, 0)
+    y_pred_pos = np.maximum(y_pred, 0)
+    rmsle = float(np.sqrt(np.mean((np.log1p(y_pred_pos) - np.log1p(y_test_pos)) ** 2)))
+
+    # SMAPE calculation (symmetric, handles zeros with epsilon)
+    smape = float(
+      np.mean(2.0 * np.abs(y_pred - y_test) / (np.abs(y_test) + np.abs(y_pred) + epsilon)) * 100
+    )
+
+    # Basic metrics
+    test_results = {
+        "rmse": float(root_mean_squared_error(y_test, y_pred)),
+        "r2": float(r2_score(y_test, y_pred)),
+        "mae": float(np.mean(np.abs(y_test - y_pred))),
+        "rmsle": rmsle,
+        "smape": smape,
+    }
+
+    # Prediction statistics
+    test_results["prediction_stats"] = {
+        "min": float(y_pred.min()),
+        "max": float(y_pred.max()),
+        "mean": float(y_pred.mean()),
+        "std": float(y_pred.std()),
+    }
+
+    # Residual analysis
+    residuals = y_test - y_pred
+    test_results["residual_stats"] = {
+        "mean": float(residuals.mean()),  # Should be ~0
+        "std": float(residuals.std()),
+        "bias_low_scores": float(residuals[y_test < y_test.mean()].mean()),
+        "bias_high_scores": float(residuals[y_test >= y_test.mean()].mean()),
+    }
+
+    # Feature importance (top 10)
+    importance = model.get_score(importance_type="gain")
+    test_results["top_features"] = dict(
+      sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]
+    )
+
+    self.logger.info("Test Results: %s", test_results)
+    return test_results

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils/python"
 )
 
@@ -41,7 +41,7 @@ func (s *MLRoutingService) Train(c echo.Context) error {
 		String: fmt.Sprintf("Queueing model %s's training task...", *dto.ModelName),
 		Valid:  true,
 	})
-	
+
 	if err != nil {
 		return c.JSON(500, map[string]any{"error": "Cannot create request"})
 	}
@@ -82,11 +82,11 @@ func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO)
 	)
 
 	if err != nil {
-		err :=s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
-			ID:     requestId,
-			Status: 3,
-			ErrorMessage:   sql.NullString{String: err.Error(), Valid: true},
-			Description: sql.NullString{String: "Training failed.", Valid: true},
+		err := s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
+			ID:           requestId,
+			Status:       3,
+			ErrorMessage: sql.NullString{String: err.Error(), Valid: true},
+			Description:  sql.NullString{String: "Training failed.", Valid: true},
 		})
 		if err != nil {
 			logger.Errorf("Failed to update request status for request %d: %v", requestId, err)
@@ -94,9 +94,9 @@ func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO)
 		return
 	}
 	err = s.Server.Queries.UpdateRequestStatus(context.Background(), db.UpdateRequestStatusParams{
-		ID:     requestId,
-		Status: 2,
-		Progress: 1.0,
+		ID:          requestId,
+		Status:      2,
+		Progress:    1.0,
 		Description: sql.NullString{String: "Training completed.", Valid: true},
 	})
 	if err != nil {
@@ -104,11 +104,47 @@ func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO)
 	}
 }
 
+type PredictionStats struct {
+	Min  float64 `json:"min"`
+	Max  float64 `json:"max"`
+	Mean float64 `json:"mean"`
+	Std  float64 `json:"std"`
+}
+
+type ResidualStats struct {
+	Mean           float64 `json:"mean"`
+	Std            float64 `json:"std"`
+	BiasLowScores  float64 `json:"bias_low_scores"`
+	BiasHighScores float64 `json:"bias_high_scores"`
+}
+
+type TopFeatures struct {
+	F769 float64 `json:"f769"`
+	F276 float64 `json:"f276"`
+	F768 float64 `json:"f768"`
+	F752 float64 `json:"f752"`
+	F545 float64 `json:"f545"`
+	F661 float64 `json:"f661"`
+	F584 float64 `json:"f584"`
+	F698 float64 `json:"f698"`
+	F720 float64 `json:"f720"`
+	F42  float64 `json:"f42"`
+}
+
+type TrainParams map[string]any
+
 type ModelMetadata struct {
-	RMSE    float64 `json:"rmse"`
-	R2      float64 `json:"r2"`
-	MAE     float64 `json:"mae"`
-	SavedAt string  `json:"saved_at"`
+	RMSE            float64         `json:"rmse"`
+	R2              float64         `json:"r2"`
+	MAE             float64         `json:"mae"`
+	RMSLE           float64         `json:"rmsle"`
+	SMAPE           float64         `json:"smape"`
+	PredictionStats PredictionStats `json:"prediction_stats"`
+	ResidualStats   ResidualStats   `json:"residual_stats"`
+	TopFeatures     TopFeatures     `json:"top_features"`
+	SavedAt         string          `json:"saved_at"`
+	IsGPU           bool            `json:"is_gpu"`
+	TrainParams     TrainParams     `json:"train_params"`
 }
 
 type ModelInfo struct {
@@ -362,7 +398,7 @@ func (s *MLRoutingService) ExportModel(c echo.Context) error {
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "application/zip")
-	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="model_`+dto.ModelName+`.zip"`)
+	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+dto.ModelName+`.zip"`)
 	c.Response().WriteHeader(http.StatusOK)
 	_, err = c.Response().Write(buf.Bytes())
 	return err

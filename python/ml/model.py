@@ -10,7 +10,6 @@ import numpy as np
 import optuna
 import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import r2_score, root_mean_squared_error
 from sklearn.model_selection import train_test_split
 from xgboost.callback import EarlyStopping
 
@@ -267,43 +266,12 @@ class PotentialCustomerScoringModel:
     dtest = xgb.DMatrix(self.X_test, missing=np.nan)
     y_pred = self.model.predict(dtest)
 
-    self.logger.info(
-        "Target value stats - min: %.6f, max: %.6f, mean: %.6f, zeros: %d/%d",
-        self.y_test.min(), self.y_test.max(), self.y_test.mean(),
-        np.sum(self.y_test == 0), len(self.y_test)
+    # Use utility method to calculate all test results
+    self.test_results = self.util.calculate_test_results(
+      self.y_test,
+      y_pred,
+      self.model
     )
-
-    epsilon = 1e-10
-
-    y_test_pos = np.maximum(self.y_test, 0)
-    y_pred_pos = np.maximum(y_pred, 0)
-    rmsle = float(np.sqrt(np.mean((np.log1p(y_pred_pos) - np.log1p(y_test_pos)) ** 2)))
-
-    smape = float(np.mean(2.0 * np.abs(y_pred - self.y_test) / (np.abs(self.y_test) + np.abs(y_pred) + epsilon)) * 100)
-
-    self.test_results = {
-        "rmse": float(root_mean_squared_error(self.y_test, y_pred)),
-        "r2": float(r2_score(self.y_test, y_pred)),
-        "mae": float(np.mean(np.abs(self.y_test - y_pred))),
-        "rmsle": rmsle,
-        "smape": smape,
-    }
-    self.test_results["prediction_stats"] = {
-        "min": float(y_pred.min()),
-        "max": float(y_pred.max()),
-        "mean": float(y_pred.mean()),
-        "std": float(y_pred.std()),
-    }
-    residuals = self.y_test - y_pred
-    self.test_results["residual_stats"] = {
-        "mean": float(residuals.mean()),  # Should be ~0
-        "std": float(residuals.std()),
-        "bias_low_scores": float(residuals[self.y_test < self.y_test.mean()].mean()),
-        "bias_high_scores": float(residuals[self.y_test >= self.y_test.mean()].mean()),
-    }
-    importance = self.model.get_score(importance_type="gain")
-    self.test_results["top_features"] = dict(sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10])
-    self.logger.info("Test Results: %s", self.test_results)
     return self.test_results
 
   def load_model(self, model_name: str):
@@ -407,7 +375,7 @@ class PotentialCustomerScoringModel:
       del test_matrix
       gc.collect()
     except xgb.core.XGBoostError as e:
-      self.logger.warning("GPU test failed: %s", e)
+      self.logger.info("GPU test failed, fallback to CPU: %s", e)
       self.logger.info("Switching to CPU for optimization")
       return False
     else:
