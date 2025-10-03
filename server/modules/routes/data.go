@@ -2,12 +2,12 @@ package routes
 
 import (
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/services"
+	"github.com/qxbao/asfpc/server/modules/routes/services/data"
 )
 
 func InitDataRoutes(s *infras.Server) {
 	e := s.Echo
-	services := services.DataService{Server: s}
+	services := data.DataService{Server: s}
 
 	e.GET("/data/stats", services.GetDataStats)
 	e.GET("/data/prompt/list", services.GetAllPrompts)

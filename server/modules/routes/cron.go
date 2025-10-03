@@ -2,12 +2,12 @@ package routes
 
 import (
 	"github.com/qxbao/asfpc/infras"
+	crs "github.com/qxbao/asfpc/server/modules/routes/services/cron"
 	"github.com/qxbao/asfpc/server/modules/cron"
-	"github.com/qxbao/asfpc/services"
 )
 
 func InitCronRoutes(s *infras.Server, cronService *cron.CronService) {
-	service := services.CronService{
+	service := crs.CronRoutingService{
 		Server: s,
 		Cron:   cronService,
 	}

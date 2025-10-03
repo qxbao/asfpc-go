@@ -2,11 +2,11 @@ package routes
 
 import (
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/services"
+	"github.com/qxbao/asfpc/server/modules/routes/services/analysis"
 )
 
 func InitAnalysisRoutes(s *infras.Server) {
-	service := services.AnalysisService{Server: s}
+	service := analysis.AnalysisService{Server: s}
 	e := s.Echo
 
 	e.GET("/analysis/profile/list", service.GetProfiles)

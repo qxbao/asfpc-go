@@ -18,20 +18,6 @@ import (
 	"github.com/qxbao/asfpc/pkg/utils/prompt"
 )
 
-type GeminiScoringTaskInput struct {
-	ctx     context.Context
-	gs      *generative.GenerativeService
-	prompt  string
-	profile *db.GetProfilesAnalysisCronjobRow
-}
-
-type GeminiEmbeddingTaskInput struct {
-	ctx     context.Context
-	gs      *generative.GenerativeService
-	prompt  string
-	profile *db.UserProfile
-}
-
 type AnalysisService struct {
 	Server *infras.Server
 }
@@ -141,7 +127,7 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 		return
 	}
 
-	semaphore := async.GetSemaphore[GeminiScoringTaskInput, bool](15)
+	semaphore := async.GetSemaphore[infras.GeminiScoringTaskInput, bool](15)
 
 	for _, profile := range profiles {
 		profilePromptContent := promptService.ReplacePrompt(prompt.Content,
@@ -157,11 +143,11 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 			profile.Gender.String,
 			profile.Birthday.String,
 		)
-		semaphore.Assign(as.geminiScoringTask, GeminiScoringTaskInput{
-			ctx:     ctx,
-			gs:      generativeService,
-			prompt:  profilePromptContent,
-			profile: &profile,
+		semaphore.Assign(as.geminiScoringTask, infras.GeminiScoringTaskInput{
+			Ctx:     ctx,
+			Gs:      generativeService,
+			Prompt:  profilePromptContent,
+			Profile: &profile,
 		})
 	}
 
@@ -190,9 +176,8 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 	logger.Infof("Gemini scoring cronjob completed: %d/%d profiles processed successfully", count, len(profiles))
 }
 
-func (as *AnalysisService) geminiScoringTask(input GeminiScoringTaskInput) bool {
-	response, err := input.gs.GenerateText(input.prompt)
-
+func (as *AnalysisService) geminiScoringTask(input infras.GeminiScoringTaskInput) bool {
+	response, err := input.Gs.GenerateText(input.Prompt)
 	if err != nil {
 		panic(fmt.Errorf("failed to generate text: %v", err))
 	}
@@ -203,8 +188,8 @@ func (as *AnalysisService) geminiScoringTask(input GeminiScoringTaskInput) bool 
 		panic(fmt.Errorf("failed to parse score: %v", err))
 	}
 
-	_, err = as.Server.Queries.UpdateGeminiAnalysisProfile(input.ctx, db.UpdateGeminiAnalysisProfileParams{
-		ID:          input.profile.ID,
+	_, err = as.Server.Queries.UpdateGeminiAnalysisProfile(input.Ctx, db.UpdateGeminiAnalysisProfileParams{
+		ID:          input.Profile.ID,
 		GeminiScore: sql.NullFloat64{Float64: score, Valid: true},
 	})
 
@@ -283,7 +268,7 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 		return
 	}
 
-	semaphore := async.GetSemaphore[GeminiEmbeddingTaskInput, bool](5)
+	semaphore := async.GetSemaphore[infras.GeminiEmbeddingTaskInput, bool](5)
 
 	for _, profile := range profiles {
 		profilePromptContent := ps.ReplacePrompt(prompt.Content,
@@ -298,11 +283,11 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 			profile.Gender.String,
 			profile.Birthday.String,
 		)
-		semaphore.Assign(as.geminiEmbeddingTask, GeminiEmbeddingTaskInput{
-			ctx:     ctx,
-			profile: &profile,
-			prompt:  profilePromptContent,
-			gs:      generativeService,
+		semaphore.Assign(as.geminiEmbeddingTask, infras.GeminiEmbeddingTaskInput{
+			Ctx:     ctx,
+			Profile: &profile,
+			Prompt:  profilePromptContent,
+			Gs:      generativeService,
 		})
 	}
 	_, errs := semaphore.Run()
@@ -318,15 +303,15 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 	logger.Infof("Gemini embedding cronjob completed: %d/%d profiles processed successfully", count, len(profiles))
 }
 
-func (as *AnalysisService) geminiEmbeddingTask(input GeminiEmbeddingTaskInput) bool {
-	response, err := input.gs.GenerateEmbedding(input.prompt)
+func (as *AnalysisService) geminiEmbeddingTask(input infras.GeminiEmbeddingTaskInput) bool {
+	response, err := input.Gs.GenerateEmbedding(input.Prompt)
 
 	if err != nil {
 		panic(fmt.Errorf("failed to generate embedding: %v", err))
 	}
 
-	_, err = as.Server.Queries.CreateEmbeddedProfile(input.ctx, db.CreateEmbeddedProfileParams{
-		Pid:       input.profile.ID,
+	_, err = as.Server.Queries.CreateEmbeddedProfile(input.Ctx, db.CreateEmbeddedProfileParams{
+		Pid:       input.Profile.ID,
 		Embedding: response,
 	})
 

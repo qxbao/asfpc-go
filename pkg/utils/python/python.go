@@ -13,7 +13,8 @@ var PythonPath = filepath.Join(filepath.Dir(exc), "python")
 
 type PythonService struct {
 	EnvName string
-	Log bool
+	Log      bool
+	Silent   bool
 }
 
 func (ps PythonService) RunScript(args ...string) (string, error) {
@@ -25,7 +26,10 @@ func (ps PythonService) RunScript(args ...string) (string, error) {
 		pythonExe = filepath.Join("venv", "bin", "python")
 	}
 
-	args = append(args, "--silent")
+	if ps.Silent {
+		args = append(args, "--silent")
+	}
+	
 	if !ps.Log {
 		args = append(args, "--no-log")
 	}

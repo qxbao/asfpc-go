@@ -158,4 +158,4 @@ class TaskNavigator:
     res_obj = {}
     for i in range(len(id_list)):
       res_obj[str(id_list[i])] = result[i]
-    self.logger.info("Prediction results: %s", json.dumps(res_obj))
+    print(json.dumps(res_obj))  # noqa: T201

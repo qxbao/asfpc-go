@@ -2,13 +2,13 @@ package routes
 
 import (
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/services"
+	"github.com/qxbao/asfpc/server/modules/routes/services/account"
 )
 
 func InitAccountRoutes(s *infras.Server) {
 	e := s.Echo
 
-	services := services.AccountService{Server: s}
+	services := account.AccountService{Server: s}
 
 	e.GET("/account/info", services.GetAccount)
 	e.GET("/account/list", services.GetAccounts)

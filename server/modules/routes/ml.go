@@ -2,11 +2,11 @@ package routes
 
 import (
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/services"
+	"github.com/qxbao/asfpc/server/modules/routes/services/ml"
 )
 
 func InitMLRoutes(s *infras.Server) {
-	service := services.MLService{Server: s}
+	service := ml.MLRoutingService{Server: s}
 	e := s.Echo
 
 	e.GET("/ml/list", service.ListModels)

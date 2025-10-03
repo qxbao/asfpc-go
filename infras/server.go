@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 
-	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
+	lg "github.com/qxbao/asfpc/pkg/logger"
+	"go.uber.org/fx"
 )
 
 type Server struct {
@@ -46,4 +47,46 @@ func (s *Server) GetConfigs(ctx context.Context) (map[string]string, error) {
 		result[config.Key] = config.Value
 	}
 	return result, nil
+}
+
+func (s *Server) RegisterHooks(lc fx.Lifecycle) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if err := lg.InitLogger(true); err != nil {
+				return err
+			}
+
+			log := lg.GetLogger("ServerInitialization")
+
+			go func() {
+				address := *s.Host + ":" + *s.Port
+				log.Info("Starting server on", address)
+
+				if err := s.Echo.Start(address); err != nil {
+					log.Error("Server failed to start:", err)
+				}
+			}()
+
+			log.Info("Server startup initiated")
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			log := lg.GetLogger("ServerShutdown")
+			log.Info("Stopping server...")
+
+			if s.Echo != nil {
+				if err := s.Echo.Shutdown(ctx); err != nil {
+					log.Error("Failed to shutdown server:", err)
+				}
+			}
+
+			if s.Database != nil {
+				if err := s.Database.Close(); err != nil {
+					log.Error("Failed to close database:", err)
+				}
+			}
+
+			return lg.FlushLogger()
+		},
+	})
 }

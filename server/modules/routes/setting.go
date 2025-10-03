@@ -2,11 +2,11 @@ package routes
 
 import (
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/services"
+	"github.com/qxbao/asfpc/server/modules/routes/services/setting"
 )
 
 func InitSettingRoutes(s *infras.Server) {
-	service := services.SettingService{Server: s}
+	service := setting.SettingRoutingService{Server: s}
 	e := s.Echo
 
 	e.GET("/setting/list", service.GetSettings)

@@ -9,3 +9,7 @@ type EntityNameID struct {
 	Id   *string `json:"id,omitempty"`
 	Name *string `json:"name"`
 }
+
+type RoutingService struct {
+	Server *Server
+}

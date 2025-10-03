@@ -57,6 +57,8 @@ func (s *MLService) ScoreProfilesCronjob() {
 	}
 	profileIDsStr := strings.Join(profileIDs, ",")
 
+	logger.Info(fmt.Sprintf("Scoring %d profiles using model %s", len(profiles), modelName))
+
 	pythonService := python.PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
 		Log:     false,
@@ -76,6 +78,7 @@ func (s *MLService) ScoreProfilesCronjob() {
 
 	if err := json.Unmarshal([]byte(res), &resData); err != nil {
 		logger.Errorf("failed to unmarshal scoring result: %v", err)
+		logger.Info("Raw response:", res)
 		return
 	}
 	sem := async.GetSemaphore[db.UpdateModelScoreParams, bool](5)

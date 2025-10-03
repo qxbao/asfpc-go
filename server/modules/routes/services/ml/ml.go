@@ -1,4 +1,4 @@
-package services
+package ml
 
 import (
 	"archive/zip"
@@ -13,16 +13,20 @@ import (
 	"strings"
 	"time"
 
+	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/pkg/utils/python"
 )
 
-type MLService struct {
+type MLRoutingService struct {
 	Server *infras.Server
 }
 
-func (s *MLService) Train(c echo.Context) error {
+var logger = lg.GetLogger("MLRoutingService")
+
+func (s *MLRoutingService) Train(c echo.Context) error {
 	dto := new(infras.MLTrainDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(400, map[string]any{"error": "Invalid request body"})
@@ -50,10 +54,11 @@ func (s *MLService) Train(c echo.Context) error {
 	})
 }
 
-func (s *MLService) trainingTask(requestId int32, dto *infras.MLTrainDTO) {
-	pythonService := PythonService{
+func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO) {
+	pythonService := python.PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
 		Log:     true,
+		Silent:  true,
 	}
 	autoTune := "False"
 
@@ -112,7 +117,7 @@ type ModelInfo struct {
 	Validation *ModelValidation
 }
 
-func (s *MLService) ListModels(c echo.Context) error {
+func (s *MLRoutingService) ListModels(c echo.Context) error {
 	modelsDir := path.Join("python", "resources", "models")
 	exc, err := os.Executable()
 
@@ -180,7 +185,7 @@ type ModelValidation struct {
 	IsValid  bool
 }
 
-func (s *MLService) ValidateModel(modelName string) (ModelValidation, error) {
+func (s *MLRoutingService) ValidateModel(modelName string) (ModelValidation, error) {
 	exc, err := os.Executable()
 	modelsDir := path.Join("python", "resources", "models")
 
@@ -220,7 +225,7 @@ func (s *MLService) ValidateModel(modelName string) (ModelValidation, error) {
 	return ModelValidation{IsExists: true, IsValid: validCount == len(requiredFiles)}, nil
 }
 
-func (s *MLService) DeleteModel(c echo.Context) error {
+func (s *MLRoutingService) DeleteModel(c echo.Context) error {
 	dto := new(infras.WithModelNameDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(400, map[string]any{
@@ -287,7 +292,7 @@ func (s *MLService) DeleteModel(c echo.Context) error {
 	})
 }
 
-func (s *MLService) ExportModel(c echo.Context) error {
+func (s *MLRoutingService) ExportModel(c echo.Context) error {
 	dto := new(infras.WithModelNameDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(400, map[string]any{

@@ -1,4 +1,4 @@
-package services
+package data
 
 import (
 	"net/http"
@@ -8,9 +8,7 @@ import (
 	"github.com/qxbao/asfpc/infras"
 )
 
-type DataService struct {
-	Server *infras.Server
-}
+type DataService infras.RoutingService
 
 func (ds *DataService) GetDataStats(c echo.Context) error {
 	queries := ds.Server.Queries

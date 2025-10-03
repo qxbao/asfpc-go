@@ -1,4 +1,4 @@
-package services
+package cron
 
 import (
 	"net/http"
@@ -8,12 +8,12 @@ import (
 	"github.com/qxbao/asfpc/server/modules/cron"
 )
 
-type CronService struct {
+type CronRoutingService struct {
 	Server *infras.Server
 	Cron   *cron.CronService
 }
 
-func (s *CronService) ListJobs(c echo.Context) error {
+func (s *CronRoutingService) ListJobs(c echo.Context) error {
 	jobsMap, err := s.Cron.ListJobs()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{
@@ -27,7 +27,7 @@ func (s *CronService) ListJobs(c echo.Context) error {
 	})
 }
 
-func (s *CronService) TriggerJob(c echo.Context) error {
+func (s *CronRoutingService) TriggerJob(c echo.Context) error {
 	dto := new(infras.JobRequestWithName)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{
@@ -42,7 +42,7 @@ func (s *CronService) TriggerJob(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *CronService) StopJob(c echo.Context) error {
+func (s *CronRoutingService) StopJob(c echo.Context) error {
 	dto := new(infras.JobRequestWithName)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{
@@ -57,7 +57,7 @@ func (s *CronService) StopJob(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *CronService) ResumeJob(c echo.Context) error {
+func (s *CronRoutingService) ResumeJob(c echo.Context) error {
 	dto := new(infras.JobRequestWithName)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{

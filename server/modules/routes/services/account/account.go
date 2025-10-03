@@ -1,4 +1,4 @@
-package services
+package account
 
 import (
 	"database/sql"
@@ -12,14 +12,10 @@ import (
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/pkg/utils/facebook"
-	lg "github.com/qxbao/asfpc/pkg/logger"
+	"github.com/qxbao/asfpc/pkg/utils/python"
 )
 
-type AccountService struct {
-	Server *infras.Server
-}
-
-var logger = lg.GetLogger("RouterService")
+type AccountService infras.RoutingService
 
 func (s *AccountService) GetAccountStats(c echo.Context) error {
 	queries := s.Server.Queries
@@ -278,8 +274,9 @@ func (s *AccountService) LoginAccount(c echo.Context) error {
 			"error": "Invalid request body",
 		})
 	}
-	pythonService := PythonService{
+	pythonService := python.PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+		Log:     false,
 	}
 	res, err := pythonService.RunScript("--task=login", fmt.Sprintf("--uid=%d", dto.UID))
 	if err != nil {
@@ -299,8 +296,9 @@ func (s *AccountService) JoinGroup(c echo.Context) error {
 			"error": "Invalid request body",
 		})
 	}
-	pythonService := PythonService{
+	pythonService := python.PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+		Log:     false,
 	}
 	res, err := pythonService.RunScript("--task=joingroup", fmt.Sprintf("--group_id=%d", dto.GID))
 	if err != nil {

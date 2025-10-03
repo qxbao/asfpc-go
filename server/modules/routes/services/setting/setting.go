@@ -1,4 +1,4 @@
-package services
+package setting
 
 import (
 	"github.com/labstack/echo/v4"
@@ -6,11 +6,9 @@ import (
 	"github.com/qxbao/asfpc/infras"
 )
 
-type SettingService struct {
-	Server *infras.Server
-}
+type SettingRoutingService infras.RoutingService
 
-func (s *SettingService) GetSettings(c echo.Context) error {
+func (s *SettingRoutingService) GetSettings(c echo.Context) error {
 	settings, err := s.Server.GetConfigs(c.Request().Context())
 	if err != nil {
 		return c.JSON(500, map[string]any{
@@ -22,7 +20,7 @@ func (s *SettingService) GetSettings(c echo.Context) error {
 	})
 }
 
-func (s *SettingService) UpdateSettings(c echo.Context) error {
+func (s *SettingRoutingService) UpdateSettings(c echo.Context) error {
 	dto := new(infras.UpdateSettingsDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(400, map[string]any{
