@@ -339,18 +339,59 @@ class ModelUtility:
     return x.astype(np.float32), scaler, encoders
 
   def encode_with_frequency(self, df: pd.DataFrame, col: str, encoders: dict[str, LabelEncoder], min_freq=0.01):
-    """Group rare categories as 'Other'"""
+    """
+    Group rare categories as 'Other' during training.
+    Handle unseen categories during prediction by mapping to most frequent category.
+
+    Args:
+        df: Input dataframe
+        col: Column name to encode
+        encoders: Dictionary of existing encoders
+        min_freq: Minimum frequency threshold for rare categories
+
+    Returns:
+        Encoded values as numpy array
+
+    """
     filled = df[col].fillna("(null)").astype(str)
+
     if col not in encoders:
+        # Training phase: Group rare categories
         value_counts = filled.value_counts(normalize=True)
         rare_categories = value_counts[value_counts < min_freq].index
-        filled = filled.replace(rare_categories.tolist(), "Other")
+
+        if len(rare_categories) > 0:
+            filled = filled.replace(rare_categories.tolist(), "Other")
+            self.logger.info(
+                "Column '%s': Grouped %d rare categories into 'Other' (min_freq=%.3f)",
+                col, len(rare_categories), min_freq
+            )
+
         encoders[col] = LabelEncoder()
         encoders[col].fit(filled)
+        self.logger.info(
+            "Column '%s': Fitted encoder with %d classes",
+            col, len(encoders[col].classes_)
+        )
     else:
-        # Handle unseen categories
+        # Prediction phase: Handle unseen categories
         known_categories = set(encoders[col].classes_)
-        filled = filled.apply(lambda x: x if x in known_categories else "Other")
+        unseen_mask = ~filled.isin(known_categories)
+
+        if unseen_mask.any():
+            unseen_count = unseen_mask.sum()
+
+            # Strategy: Map unseen to most frequent class in training data
+            # This is safer than creating "Other" which may not exist
+            most_frequent_class = encoders[col].classes_[0]  # Classes are sorted by frequency
+            filled = filled.copy()
+            filled[unseen_mask] = most_frequent_class
+
+            self.logger.warning(
+                "Column '%s': Found %d unseen categories, mapped to '%s'",
+                col, unseen_count, most_frequent_class
+            )
+
     return encoders[col].transform(filled)
 
   def validate_embedding(self, embedding: list[float]) -> np.ndarray:
