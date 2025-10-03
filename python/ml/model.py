@@ -29,7 +29,6 @@ class PotentialCustomerScoringModel:
     self.scaler = None
     self.embedding_dim = 768
     self.logger = logging.getLogger(__name__)
-    self.use_gpu = self._test_gpu()
     self.rs = RequestService()
 
   def load_data(self, df: pd.DataFrame) -> None:
@@ -58,7 +57,7 @@ class PotentialCustomerScoringModel:
       raise ValueError(missing_err_msg)
 
     df = df.copy()
-
+    self.dataset_size = len(df)
     stratify_column = None
     try:
       df["score_bin"] = pd.qcut(df[label_col], q=5, duplicates="drop", labels=False)
@@ -107,10 +106,8 @@ class PotentialCustomerScoringModel:
     if not hasattr(self, "X_train"):
       msg = "Data not loaded. Call load_data first."
       raise ValueError(msg)
-    if self.use_gpu:
-      self.use_gpu = self._test_gpu()
 
-    sample_size = min(self.util.get_sample_size(self.use_gpu), len(self.X_train))
+    sample_size = min(int(self.dataset_size * 0.5), 5000)
     x_sample = self.X_train[:sample_size]
     y_sample = self.y_train[:sample_size]
     objective = self.util.get_optuna_objective(x_sample, y_sample, self.use_gpu)
@@ -213,13 +210,17 @@ class PotentialCustomerScoringModel:
 
   def train(self, auto_tune: bool = True):
     # Explicitly set missing value indicator for XGBoost
+    self.use_gpu = self._test_gpu()
     dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False, missing=np.nan)
     dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False, missing=np.nan)
 
     params = self.util.get_base_params(self.use_gpu)
-    params.update(self.util.recommended_params)
-    num_boost_round = 800
-
+    params.update(self.util.get_recommended_params(self.dataset_size))
+    num_boost_round = self.util.get_num_boost_round(self.dataset_size)
+    params.update({
+      "num_boost_round": num_boost_round,
+      "max_bin": self.util.get_max_bin(self.dataset_size, self.use_gpu),
+    })
     if auto_tune:
       try:
         best_params = self.auto_tune()
@@ -235,7 +236,7 @@ class PotentialCustomerScoringModel:
 
     callbacks = []
     callbacks.append(EarlyStopping(
-        rounds=30,
+        rounds=self.util.get_early_stopping_rounds(self.dataset_size),
         metric_name="rmse",
         data_name="eval",
         save_best=True
@@ -248,25 +249,17 @@ class PotentialCustomerScoringModel:
         params, dtrain, dval, num_boost_round, callbacks
       )
       self.logger.info("Model training completed successfully")
-    except Exception as e:
+    except (xgb.core.XGBoostError, ValueError, RuntimeError, MemoryError) as e:
       if self.use_gpu:
         self.logger.warning("GPU training failed: %s", e)
-        self.logger.info("Falling back to CPU training")
-        self.use_gpu = False
-        params.update(self.util.get_base_params(self.use_gpu))
-        self.model = self._execute_training(
-          params, dtrain, dval, num_boost_round, callbacks
-        )
-        self.logger.info("Model training completed successfully with CPU fallback")
-      else:
-        self.logger.exception("CPU training also failed")
-        raise
 
   def test(self):
     dtest = xgb.DMatrix(self.X_test, missing=np.nan)
+    if not self.model:
+      err_msg = "No model found"
+      raise ValueError(err_msg)
     y_pred = self.model.predict(dtest)
 
-    # Use utility method to calculate all test results
     self.test_results = self.util.calculate_test_results(
       self.y_test,
       y_pred,

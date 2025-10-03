@@ -360,7 +360,7 @@ SELECT COUNT(*) as total_logs FROM public.log;
 SELECT * FROM public.gemini_key;
 
 -- name: GetGeminiKeyForUse :one
-SELECT * FROM public.gemini_key ORDER BY updated_at ASC NULLS LAST LIMIT 1;
+SELECT * FROM public.gemini_key ORDER BY updated_at ASC NULLS FIRST LIMIT 1;
 
 -- name: CountGeminiKeys :one
 SELECT COUNT(*) as total_gemini_keys FROM public.gemini_key;

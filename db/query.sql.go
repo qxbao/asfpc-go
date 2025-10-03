@@ -664,7 +664,7 @@ func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error
 }
 
 const getGeminiKeyForUse = `-- name: GetGeminiKeyForUse :one
-SELECT id, api_key, token_used, updated_at FROM public.gemini_key ORDER BY updated_at ASC NULLS LAST LIMIT 1
+SELECT id, api_key, token_used, updated_at FROM public.gemini_key ORDER BY updated_at ASC NULLS FIRST LIMIT 1
 `
 
 func (q *Queries) GetGeminiKeyForUse(ctx context.Context) (GeminiKey, error) {
