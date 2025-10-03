@@ -16,9 +16,9 @@ import (
 
 
 
-type AnalysisService infras.RoutingService
+type AnalysisRoutingService infras.RoutingService
 
-func (as *AnalysisService) GetProfiles(c echo.Context) error {
+func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 	queries := as.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 
@@ -66,7 +66,7 @@ func (as *AnalysisService) GetProfiles(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) GetProfileStats(c echo.Context) error {
+func (as *AnalysisRoutingService) GetProfileStats(c echo.Context) error {
 	queries := as.Server.Queries
 	stats, err := queries.GetProfileStats(c.Request().Context())
 	if err != nil {
@@ -79,7 +79,7 @@ func (as *AnalysisService) GetProfileStats(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
+func (as *AnalysisRoutingService) AnalyzeProfileWithGemini(c echo.Context) error {
 	dto := new(infras.AnalyzeProfileRequest)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(400, map[string]any{
@@ -193,7 +193,7 @@ func (as *AnalysisService) AnalyzeProfileWithGemini(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) AddGeminiKey(c echo.Context) error {
+func (as *AnalysisRoutingService) AddGeminiKey(c echo.Context) error {
 	queries := as.Server.Queries
 	dto := new(infras.AddGeminiKeyDTO)
 	if err := c.Bind(dto); err != nil {
@@ -212,7 +212,7 @@ func (as *AnalysisService) AddGeminiKey(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) DeleteGeminiKey(c echo.Context) error {
+func (as *AnalysisRoutingService) DeleteGeminiKey(c echo.Context) error {
 	queries := as.Server.Queries
 	dto := new(infras.DeleteGeminiKeyDTO)
 	if err := c.Bind(dto); err != nil {
@@ -231,7 +231,7 @@ func (as *AnalysisService) DeleteGeminiKey(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) DeleteJunkProfiles(c echo.Context) error {
+func (as *AnalysisRoutingService) DeleteJunkProfiles(c echo.Context) error {
 	queries := as.Server.Queries
 	count, err := queries.DeleteJunkProfiles(c.Request().Context())
 	if err != nil {
@@ -244,7 +244,7 @@ func (as *AnalysisService) DeleteJunkProfiles(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) ExportProfiles(c echo.Context) error {
+func (as *AnalysisRoutingService) ExportProfiles(c echo.Context) error {
 	queries := as.Server.Queries
 	profiles, err := queries.GetProfilesForExport(c.Request().Context())
 	if err != nil {
@@ -267,7 +267,7 @@ func (as *AnalysisService) ExportProfiles(c echo.Context) error {
 	return enc.Encode(profiles)
 }
 
-func (as *AnalysisService) GetGeminiKeys(c echo.Context) error {
+func (as *AnalysisRoutingService) GetGeminiKeys(c echo.Context) error {
 	queries := as.Server.Queries
 	keys, err := queries.GetGeminiKeys(c.Request().Context())
 
@@ -293,7 +293,7 @@ func (as *AnalysisService) GetGeminiKeys(c echo.Context) error {
 	})
 }
 
-func (as *AnalysisService) ImportProfiles(c echo.Context) error {
+func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 	file, err := c.FormFile("file")
 	if err != nil {
 		return c.JSON(400, map[string]any{

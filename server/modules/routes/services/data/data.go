@@ -8,9 +8,9 @@ import (
 	"github.com/qxbao/asfpc/infras"
 )
 
-type DataService infras.RoutingService
+type DataRoutingService infras.RoutingService
 
-func (ds *DataService) GetDataStats(c echo.Context) error {
+func (ds *DataRoutingService) GetDataStats(c echo.Context) error {
 	queries := ds.Server.Queries
 	stats, err := queries.GetStats(c.Request().Context())
 
@@ -25,7 +25,7 @@ func (ds *DataService) GetDataStats(c echo.Context) error {
 	})
 }
 
-func (ds *DataService) TraceRequest(c echo.Context) error {
+func (ds *DataRoutingService) TraceRequest(c echo.Context) error {
 	queries := ds.Server.Queries
 	dto := new(infras.TraceRequestDTO)
 	if err := c.Bind(dto); err != nil {
@@ -46,7 +46,7 @@ func (ds *DataService) TraceRequest(c echo.Context) error {
 	})
 }
 
-func (ds *DataService) GetAllPrompts(c echo.Context) error {
+func (ds *DataRoutingService) GetAllPrompts(c echo.Context) error {
 	queries := ds.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 	if err := c.Bind(dto); err != nil {
@@ -94,7 +94,7 @@ func (ds *DataService) GetAllPrompts(c echo.Context) error {
 	})
 }
 
-func (ds *DataService) CreatePrompt(c echo.Context) error {
+func (ds *DataRoutingService) CreatePrompt(c echo.Context) error {
 	queries := ds.Server.Queries
 
 	dto := new(infras.CreatePromptRequest)
@@ -121,7 +121,7 @@ func (ds *DataService) CreatePrompt(c echo.Context) error {
 	})
 }
 
-func (ds *DataService) GetLogs(c echo.Context) error {
+func (ds *DataRoutingService) GetLogs(c echo.Context) error {
 	queries := ds.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 	if err := c.Bind(dto); err != nil {

@@ -15,9 +15,9 @@ import (
 	"github.com/qxbao/asfpc/pkg/utils/python"
 )
 
-type AccountService infras.RoutingService
+type AccountRoutingService infras.RoutingService
 
-func (s *AccountService) GetAccountStats(c echo.Context) error {
+func (s *AccountRoutingService) GetAccountStats(c echo.Context) error {
 	queries := s.Server.Queries
 	stats, err := queries.GetAccountStats(c.Request().Context())
 
@@ -32,7 +32,7 @@ func (s *AccountService) GetAccountStats(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) AddAccount(c echo.Context) error {
+func (s *AccountRoutingService) AddAccount(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.CreateAccountDTO)
 
@@ -76,7 +76,7 @@ func (s *AccountService) AddAccount(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) GetAccount(c echo.Context) error {
+func (s *AccountRoutingService) GetAccount(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.GetAccountDTO)
 
@@ -98,7 +98,7 @@ func (s *AccountService) GetAccount(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) GetAccounts(c echo.Context) error {
+func (s *AccountRoutingService) GetAccounts(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 	if err := c.Bind(dto); err != nil {
@@ -137,7 +137,7 @@ func (s *AccountService) GetAccounts(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) DeleteAccounts(c echo.Context) error {
+func (s *AccountRoutingService) DeleteAccounts(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.DeleteAccountsDTO)
 	if err := c.Bind(dto); err != nil {
@@ -163,7 +163,7 @@ func (s *AccountService) DeleteAccounts(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) UpdateAccountCredentials(c echo.Context) error {
+func (s *AccountRoutingService) UpdateAccountCredentials(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.UpdateAccountCredentialsDTO)
 	if err := c.Bind(dto); err != nil {
@@ -188,7 +188,7 @@ func (s *AccountService) UpdateAccountCredentials(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) GenAccountsAT(c echo.Context) error {
+func (s *AccountRoutingService) GenAccountsAT(c echo.Context) error {
 	dto := new(infras.GenAccountsATDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{
@@ -267,7 +267,7 @@ func (s *AccountService) GenAccountsAT(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) LoginAccount(c echo.Context) error {
+func (s *AccountRoutingService) LoginAccount(c echo.Context) error {
 	dto := new(infras.LoginAccountDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{
@@ -289,7 +289,7 @@ func (s *AccountService) LoginAccount(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) JoinGroup(c echo.Context) error {
+func (s *AccountRoutingService) JoinGroup(c echo.Context) error {
 	dto := new(infras.JoinGroupDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{
@@ -312,7 +312,7 @@ func (s *AccountService) JoinGroup(c echo.Context) error {
 }
 
 
-func (s *AccountService) CreateGroup(c echo.Context) error {
+func (s *AccountRoutingService) CreateGroup(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.CreateGroupDTO)
 	if err := c.Bind(dto); err != nil {
@@ -346,7 +346,7 @@ func (s *AccountService) CreateGroup(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
+func (s *AccountRoutingService) GetGroupsByAccountID(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.GetGroupsByAccountIDDTO)
 	if err := c.Bind(dto); err != nil {
@@ -381,7 +381,7 @@ func (s *AccountService) GetGroupsByAccountID(c echo.Context) error {
 	})
 }
 
-func (s *AccountService) DeleteGroup(c echo.Context) error {
+func (s *AccountRoutingService) DeleteGroup(c echo.Context) error {
 	dto := new(infras.DeleteGroupDTO)
 	if err := c.Bind(dto); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{

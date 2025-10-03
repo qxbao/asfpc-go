@@ -41,21 +41,48 @@ class PotentialCustomerScoringModel:
         df (pd.DataFrame): Input DataFrame containing features (embedding, gender, locale, relationship_status) and labels (gemini_score).
 
     """
+    if df.empty:
+      empty_err_msg = "Input DataFrame is empty"
+      raise ValueError(empty_err_msg)
+
+    for col in self.util.required_features:
+      if col not in df.columns:
+        missing_err_msg = f"Missing required feature: {col}"
+        raise ValueError(missing_err_msg)
+      if df[col].isna().all():
+        missing_err_msg = f"Required feature '{col}' contains only missing values"
+        raise ValueError(missing_err_msg)
+
     label_col = self.util.label_column
+    if label_col not in df.columns:
+      missing_err_msg = f"Missing label column: {label_col}"
+      raise ValueError(missing_err_msg)
+
     df = df.copy()
-    df["score_bin"] = pd.qcut(df[label_col], q=5, duplicates="drop")
+
+    stratify_column = None
+    try:
+      df["score_bin"] = pd.qcut(df[label_col], q=5, duplicates="drop", labels=False)
+      stratify_column = df["score_bin"]
+      self.logger.info("Created score bins for stratified sampling")
+    except (ValueError, TypeError) as e:
+      self.logger.warning("Failed to create score bins: %s. Will use random split.", e)
 
     try:
-      train_df, test_df = train_test_split(
-        df, test_size=0.2, random_state=42, stratify=df["score_bin"]
-      )
-      self.logger.info("Used stratified sampling for train/test split")
-    except ValueError as e:
+      if stratify_column is not None:
+        train_df, test_df = train_test_split(
+          df, test_size=0.2, random_state=42, stratify=stratify_column
+        )
+        self.logger.info("Used stratified sampling for train/test split")
+      else:
+        train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+        self.logger.info("Used random sampling for train/test split")
+    except (ValueError, KeyError) as e:
       self.logger.warning("Stratified sampling failed: %s. Using random split.", e)
       train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
 
-    train_df = train_df.drop("score_bin", axis=1)
-    test_df = test_df.drop("score_bin", axis=1)
+    train_df = train_df.drop("score_bin", axis=1, errors="ignore")
+    test_df = test_df.drop("score_bin", axis=1, errors="ignore")
 
     self.X_train, scaler, encoders = self.util.prepare_features(
       train_df, self.scaler, self.encoders
@@ -186,8 +213,9 @@ class PotentialCustomerScoringModel:
       return {}
 
   def train(self, auto_tune: bool = True):
-    dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False)
-    dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False)
+    # Explicitly set missing value indicator for XGBoost
+    dtrain = xgb.DMatrix(self.X_train, label=self.y_train, enable_categorical=False, missing=np.nan)
+    dval = xgb.DMatrix(self.X_test, label=self.y_test, enable_categorical=False, missing=np.nan)
 
     params = self.util.get_base_params(self.use_gpu)
     params.update(self.util.recommended_params)
@@ -236,24 +264,46 @@ class PotentialCustomerScoringModel:
         raise
 
   def test(self):
-    if self.model is None:
-      msg = "No model to test"
-      raise ValueError(msg)
-
-    if not hasattr(self, "X_test") or not hasattr(self, "y_test"):
-      msg = "Test data not loaded"
-      raise ValueError(msg)
-
-    dtest = xgb.DMatrix(self.X_test)
+    dtest = xgb.DMatrix(self.X_test, missing=np.nan)
     y_pred = self.model.predict(dtest)
-    rmse = root_mean_squared_error(self.y_test, y_pred)
+
+    self.logger.info(
+        "Target value stats - min: %.6f, max: %.6f, mean: %.6f, zeros: %d/%d",
+        self.y_test.min(), self.y_test.max(), self.y_test.mean(),
+        np.sum(self.y_test == 0), len(self.y_test)
+    )
+
+    epsilon = 1e-10
+
+    y_test_pos = np.maximum(self.y_test, 0)
+    y_pred_pos = np.maximum(y_pred, 0)
+    rmsle = float(np.sqrt(np.mean((np.log1p(y_pred_pos) - np.log1p(y_test_pos)) ** 2)))
+
+    smape = float(np.mean(2.0 * np.abs(y_pred - self.y_test) / (np.abs(self.y_test) + np.abs(y_pred) + epsilon)) * 100)
 
     self.test_results = {
-      "rmse": rmse,
-      "r2": r2_score(self.y_test, y_pred),
-      "mae": np.mean(np.abs(self.y_test - y_pred)),
+        "rmse": float(root_mean_squared_error(self.y_test, y_pred)),
+        "r2": float(r2_score(self.y_test, y_pred)),
+        "mae": float(np.mean(np.abs(self.y_test - y_pred))),
+        "rmsle": rmsle,
+        "smape": smape,
     }
-    self.test_results = self.util.convert_numpy_types(self.test_results)
+    self.test_results["prediction_stats"] = {
+        "min": float(y_pred.min()),
+        "max": float(y_pred.max()),
+        "mean": float(y_pred.mean()),
+        "std": float(y_pred.std()),
+    }
+    residuals = self.y_test - y_pred
+    self.test_results["residual_stats"] = {
+        "mean": float(residuals.mean()),  # Should be ~0
+        "std": float(residuals.std()),
+        "bias_low_scores": float(residuals[self.y_test < self.y_test.mean()].mean()),
+        "bias_high_scores": float(residuals[self.y_test >= self.y_test.mean()].mean()),
+    }
+    importance = self.model.get_score(importance_type="gain")
+    self.test_results["top_features"] = dict(sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10])
+    self.logger.info("Test Results: %s", self.test_results)
     return self.test_results
 
   def load_model(self, model_name: str):
@@ -295,7 +345,7 @@ class PotentialCustomerScoringModel:
     x, scaler, encoders = self.util.prepare_features(df, self.scaler, self.encoders)
     self.scaler = scaler
     self.encoders = encoders
-    dmatrix = xgb.DMatrix(x)
+    dmatrix = xgb.DMatrix(x, missing=np.nan)
     predictions = self.model.predict(dmatrix)
     return self.util.convert_numpy_types(predictions)
 
@@ -341,7 +391,6 @@ class PotentialCustomerScoringModel:
       dtrain,
       num_boost_round=num_boost_round,
       evals=[(dtrain, "train"), (dval, "eval")],
-      early_stopping_rounds=20,
       verbose_eval=False,
       callbacks=callbacks if callbacks else None,
     )

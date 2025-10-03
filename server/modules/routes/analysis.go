@@ -6,7 +6,7 @@ import (
 )
 
 func InitAnalysisRoutes(s *infras.Server) {
-	service := analysis.AnalysisService{Server: s}
+	service := analysis.AnalysisRoutingService{Server: s}
 	e := s.Echo
 
 	e.GET("/analysis/profile/list", service.GetProfiles)

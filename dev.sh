@@ -6,6 +6,10 @@
 
 set -e  # Exit on any error
 
+# export gopath
+export GOPATH=$HOME/go
+export PATH=$GOPATH/bin:$PATH
+
 # Check if .env file exists
 if [ ! -f .env ]; then
     echo "Error: .env file not found"

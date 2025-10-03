@@ -7,7 +7,7 @@ import (
 
 func InitDataRoutes(s *infras.Server) {
 	e := s.Echo
-	services := data.DataService{Server: s}
+	services := data.DataRoutingService{Server: s}
 
 	e.GET("/data/stats", services.GetDataStats)
 	e.GET("/data/prompt/list", services.GetAllPrompts)

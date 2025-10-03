@@ -8,7 +8,7 @@ import (
 func InitAccountRoutes(s *infras.Server) {
 	e := s.Echo
 
-	services := account.AccountService{Server: s}
+	services := account.AccountRoutingService{Server: s}
 
 	e.GET("/account/info", services.GetAccount)
 	e.GET("/account/list", services.GetAccounts)

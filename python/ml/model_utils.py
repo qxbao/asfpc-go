@@ -5,12 +5,13 @@ import logging
 import threading
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 import optuna
 import pandas as pd
 import xgboost as xgb
+from dateutil.parser import parse
 from optuna.study.study import ObjectiveFuncType
 from optuna.trial import Trial
 from sklearn.calibration import LabelEncoder
@@ -20,8 +21,10 @@ from xgboost.callback import LearningRateScheduler
 from database.database import Database
 from database.services.request import RequestService
 
+T = TypeVar("T")
 
 class ModelUtility:
+  MAX_AGE = 120
   def __init__(self, model_name):
     self.model_name = model_name
     self.logger = logging.getLogger("ModelUtility")
@@ -45,17 +48,21 @@ class ModelUtility:
   @property
   def recommended_params(self) -> dict:
     return {
-      "booster": "gbtree",  # Standard gradient boosting
-      "grow_policy": "lossguide",  # Loss-guided growth for better accuracy
-      "eta": 0.05,  # Lower learning rate for smoother convergence
-      "max_depth": 5,  # Moderate depth to prevent overfitting on small score range
-      "min_child_weight": 3,  # Higher to reduce noise in probability predictions
-      "subsample": 0.85,  # High subsample for stability
-      "colsample_bytree": 0.85,  # High feature sampling for robustness
-      "gamma": 0.1,  # Small regularization for pruning
-      "reg_alpha": 0.3,  # L1 regularization to handle sparse features (embeddings)
-      "reg_lambda": 1.2,  # L2 regularization for smooth predictions
-      "nthread": 4,  # Parallel threads
+        "booster": "gbtree",            # Booster ổn định nhất cho regression
+        "grow_policy": "lossguide",     # Tốt cho dữ liệu cao chiều (embedding)
+        "eta": 0.03,                    # Giảm learning rate để hội tụ mượt hơn
+        "max_depth": 5,                 # Depth nhỏ hơn để tránh overfit
+        "max_leaves": 64,               # Giới hạn số leaf để kiểm soát complexity
+        "min_child_weight": 4,          # Tăng để tránh split nhỏ vô nghĩa
+        "subsample": 0.8,               # Random row sampling
+        "colsample_bytree": 0.7,        # Random feature sampling
+        "colsample_bylevel": 0.8,
+        "gamma": 0.15,                  # Pruning nhẹ, ổn định
+        "reg_alpha": 0.6,               # Mạnh tay với L1 để loại bỏ noise
+        "reg_lambda": 1.5,              # L2 để ổn định weight
+        "nthread": 4,
+        "lr_decay": 0.95,               # Cho phép decay nhẹ dần learning rate
+        "verbosity": 0
     }
 
   def get_base_params(self, use_gpu: bool) -> dict:
@@ -105,15 +112,18 @@ class ModelUtility:
             ),
             "verbosity": 0,
             "nthread": trial.suggest_int("nthread", 1, 8),
-            "eta": trial.suggest_float("eta", 0.03, 0.2, log=True),
-            "max_depth": trial.suggest_int("max_depth", 4, 9),
-            "min_child_weight": trial.suggest_int("min_child_weight", 1, 6),
-            "subsample": trial.suggest_float("subsample", 0.7, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
+            "eta": trial.suggest_float("eta", 0.01, 0.07, log=True),
+            "max_depth": trial.suggest_int("max_depth", 3, 6),
+            "max_leaves": trial.suggest_int("max_leaves", 0, 256) if params["grow_policy"] == "lossguide" else 0,
+            "min_child_weight": trial.suggest_float("min_child_weight", 2, 8),
+            "subsample": trial.suggest_float("subsample", 0.7, 0.9),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.85),
+            "colsample_bylevel": trial.suggest_float("colsample_bylevel", 0.6, 1.0),
+            "colsample_bynode": trial.suggest_float("colsample_bynode", 0.6, 1.0),
             "gamma": trial.suggest_float("gamma", 0, 0.3),
-            "reg_alpha": trial.suggest_float("reg_alpha", 0, 1.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 0.8, 2.0),
-            "lr_decay": trial.suggest_float("lr_decay", 0.8, 1),
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.2, 1.0),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 2.0),
+            "lr_decay": trial.suggest_float("lr_decay", 0.9, 1.0),
           }
         )
         self.logger.info("Trial parameters: %s", params)
@@ -156,16 +166,17 @@ class ModelUtility:
     return objective
 
   def get_age(self, birthday: str) -> int | float:
-    """Convert birthday string in MM/DD/YYYY format to age in years. Returns NaN if invalid."""
-    birthday_part_n = 3
     try:
-      parts = birthday.split("/")
-      if len(parts) == birthday_part_n:
-        current_year = datetime.datetime.now(tz=datetime.UTC).date().year
-        return current_year - int(parts[2])
-    except ValueError:
+      birth_date = parse(birthday, dayfirst=False)
+      today = datetime.datetime.now(tz=datetime.UTC).date()
+      age = (today - birth_date.date()).days / 365.25
+      if not (0 <= age <= self.MAX_AGE):
+        self.logger.warning("Unrealistic age %d from birthday %s", age, birthday)
+        return np.nan
+    except (ValueError, TypeError):
       return np.nan
-    return np.nan
+    else:
+      return age
 
   def prepare_features(
     self, df: pd.DataFrame, scaler: StandardScaler | None, encoders: dict | None
@@ -188,51 +199,70 @@ class ModelUtility:
     cate_features = ["gender", "locale", "relationship_status"]
     x_cate = []
     for col in cate_features:
-      filled = df[col].fillna("(null)").astype(str)
-      if col not in encoders:
-        encoders[col] = LabelEncoder()
-        x_cate.append(encoders[col].fit_transform(filled))
-      else:
-        unseen_mask = ~filled.isin(encoders[col].classes_)
-        if unseen_mask.any():
-          self.logger.warning(
-            "Found unseen labels in column '%s': %s", col, filled[unseen_mask].unique()
-          )
-          default_label = (
-            "(null)"
-            if "(null)" in encoders[col].classes_
-            else encoders[col].classes_[0]
-          )
-          filled = filled.where(~unseen_mask, default_label)
-        x_cate.append(encoders[col].transform(filled))
+      # Use frequency-based encoding for high-cardinality features
+      min_freq = 0.01 if col == "locale" else 0.005  # Stricter for locale
+      encoded_values = self.encode_with_frequency(df, col, encoders, min_freq=min_freq)
+      x_cate.append(encoded_values)
     x_cate = np.vstack(x_cate).T
-    x_age = np.array(
-      df["birthday"]
-      .fillna("")
-      .infer_objects(copy=False)
-      .apply(self.get_age)
-      .fillna(-1)
-      .values
-    ).reshape(-1, 1)
+    # Keep NaN for missing age values - XGBoost handles them natively
+    x_age = df["birthday"]\
+        .fillna("")\
+        .infer_objects(copy=False)\
+        .apply(self.get_age)\
+        .to_numpy()\
+        .reshape(-1, 1)
+    # Don't convert NaN to -1, XGBoost will treat NaN as missing value indicator
     x = np.hstack([x_emb, x_cate.astype(np.float32), x_age.astype(np.float32)])
     return x.astype(np.float32), scaler, encoders
 
+  def encode_with_frequency(self, df: pd.DataFrame, col: str, encoders: dict[str, LabelEncoder], min_freq=0.01) -> dict[str, LabelEncoder]:
+    """Group rare categories as 'Other'"""
+    filled = df[col].fillna("(null)").astype(str)
+    if col not in encoders:
+        value_counts = filled.value_counts(normalize=True)
+        rare_categories = value_counts[value_counts < min_freq].index
+
+        filled = filled.replace(rare_categories, "Other")
+        encoders[col] = LabelEncoder()
+        encoders[col].fit(filled)
+    else:
+        # Handle unseen categories
+        known_categories = set(encoders[col].classes_)
+        filled = filled.apply(lambda x: x if x in known_categories else "Other")
+    return encoders[col].transform(filled)
+
   def validate_embedding(self, embedding: list[float]) -> np.ndarray:
-    """Ensure embedding is a valid 1D numpy array of the correct dimension"""
     try:
-      arr = np.array(embedding, dtype=np.float32)
-      if arr.ndim == 1:
+        arr = np.array(embedding, dtype=np.float32).flatten()
+
+        # Check dimension
+        if len(arr) != self.embedding_dimension:
+            self.logger.warning("Expected %dD embedding, got %dD", self.embedding_dimension, len(arr))
+            # Pad or truncate
+            if len(arr) < self.embedding_dimension:
+                arr = np.pad(arr, (0, self.embedding_dimension - len(arr)))
+            else:
+                arr = arr[:self.embedding_dimension]
+
+        # Check for invalid values
+        if np.any(np.isnan(arr)) or np.any(np.isinf(arr)):
+            self.logger.warning("Embedding contains NaN/Inf values")
+            # Use mean embedding instead of zeros
+            return self._get_mean_embedding()  # Store this from training data
+
+        # Check if all zeros (likely missing)
+        if np.allclose(arr, 0):
+            self.logger.warning("All-zero embedding detected")
+            return self._get_mean_embedding()
+
+    except Exception:
+        self.logger.exception("Failed to validate embedding")
+        return self._get_mean_embedding()
+    else:
         return arr
-      if arr.ndim == 2:  # noqa: PLR2004
-        return arr.flatten()
-      err_msg = "Embedding must be a 1D or 2D array"
-      raise ValueError(err_msg)  # noqa: TRY301
-    except ValueError:
-      self.logger.warning("Invalid embedding found, replaced with zeros.")
-      return np.zeros(self.embedding_dimension, dtype=np.float32)
 
   def convert_numpy_types(
-    self, obj: dict | list | np.ndarray | np.integer | np.floating | np.bool_
+    self, obj: T
   ) -> Any:
     """Recursively convert numpy types to Python native types for JSON serialization"""
     if isinstance(obj, dict):
@@ -250,7 +280,6 @@ class ModelUtility:
     else:
       result = obj
     return result
-
 
 class UpdateRequestCallback:
   def __init__(
@@ -314,5 +343,5 @@ class UpdateRequestCallback:
           self.logger.debug("No request_id provided, skipping update")
       finally:
         loop.close()
-    except RuntimeError as e:
-      self.logger.warning("Failed to update request status: %s", e)
+    except RuntimeError:
+      self.logger.exception("Failed to update request status")
