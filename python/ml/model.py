@@ -401,7 +401,7 @@ class PotentialCustomerScoringModel:
       raise ValueError(err_msg)
     try:
       test_matrix = xgb.DMatrix(self.X_train[:100], label=self.y_train[:100])
-      test_params = {"device": "cuda", "tree_method": "hist", "max_bin": 256}
+      test_params = {"device": "gpu", "tree_method": "gpu_hist", "max_bin": 256}
       xgb.train(test_params, test_matrix, num_boost_round=1, verbose_eval=False)
       self.logger.info("GPU is available and working")
       del test_matrix

@@ -104,17 +104,16 @@ class ModelUtility:
     def objective(trial: Trial) -> float | Sequence[float]:
       try:
         params = base_params.copy()
+        grow_policy = trial.suggest_categorical("grow_policy", ["depthwise", "lossguide"])
         params.update(
           {
             "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
-            "grow_policy": trial.suggest_categorical(
-              "grow_policy", ["depthwise", "lossguide"]
-            ),
+            "grow_policy": grow_policy,
             "verbosity": 0,
             "nthread": trial.suggest_int("nthread", 1, 8),
             "eta": trial.suggest_float("eta", 0.01, 0.07, log=True),
             "max_depth": trial.suggest_int("max_depth", 3, 6),
-            "max_leaves": trial.suggest_int("max_leaves", 0, 256) if params["grow_policy"] == "lossguide" else 0,
+            "max_leaves": trial.suggest_int("max_leaves", 16, 256) if grow_policy == "lossguide" else 0,
             "min_child_weight": trial.suggest_float("min_child_weight", 2, 8),
             "subsample": trial.suggest_float("subsample", 0.7, 0.9),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.85),
