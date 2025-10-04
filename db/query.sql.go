@@ -1635,7 +1635,24 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 const importProfile = `-- name: ImportProfile :one
 INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-ON CONFLICT (facebook_id) DO NOTHING
+ON CONFLICT (facebook_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    bio = EXCLUDED.bio,
+    location = EXCLUDED.location,
+    work = EXCLUDED.work,
+    education = EXCLUDED.education,
+    relationship_status = EXCLUDED.relationship_status,
+    updated_at = EXCLUDED.updated_at,
+    is_scanned = EXCLUDED.is_scanned,
+    hometown = EXCLUDED.hometown,
+    locale = EXCLUDED.locale,
+    gender = EXCLUDED.gender,
+    birthday = EXCLUDED.birthday,
+    email = EXCLUDED.email,
+    phone = EXCLUDED.phone,
+    profile_url = EXCLUDED.profile_url,
+    is_analyzed = EXCLUDED.is_analyzed,
+    gemini_score = EXCLUDED.gemini_score
 RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
 `
 
@@ -2053,7 +2070,7 @@ func (q *Queries) UpsertConfig(ctx context.Context, arg UpsertConfigParams) (Con
 const upsertEmbeddedProfiles = `-- name: UpsertEmbeddedProfiles :exec
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
-ON CONFLICT (embedded_profile_pid_fk) DO UPDATE SET
+ON CONFLICT (pid) DO UPDATE SET
     embedding = EXCLUDED.embedding,
     created_at = NOW()
 `

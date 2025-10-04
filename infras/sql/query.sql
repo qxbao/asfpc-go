@@ -261,10 +261,27 @@ SET model_score = $2
 WHERE id = $1;
 
 -- name: ImportProfile :one
-INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score) up
+INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-ON CONFLICT (facebook_id) DO NOTHING
-RETURNING up.id;
+ON CONFLICT (facebook_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    bio = EXCLUDED.bio,
+    location = EXCLUDED.location,
+    work = EXCLUDED.work,
+    education = EXCLUDED.education,
+    relationship_status = EXCLUDED.relationship_status,
+    updated_at = EXCLUDED.updated_at,
+    is_scanned = EXCLUDED.is_scanned,
+    hometown = EXCLUDED.hometown,
+    locale = EXCLUDED.locale,
+    gender = EXCLUDED.gender,
+    birthday = EXCLUDED.birthday,
+    email = EXCLUDED.email,
+    phone = EXCLUDED.phone,
+    profile_url = EXCLUDED.profile_url,
+    is_analyzed = EXCLUDED.is_analyzed,
+    gemini_score = EXCLUDED.gemini_score
+RETURNING *;
 
 -- name: DeleteJunkProfiles :one
 WITH non_null_count AS (
