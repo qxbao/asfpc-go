@@ -202,7 +202,7 @@ INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
 ON CONFLICT (pid) DO UPDATE SET
     embedding = EXCLUDED.embedding,
-    updated_at = NOW();
+    created_at = NOW();
 
 -- name: CountProfiles :one
 SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true;

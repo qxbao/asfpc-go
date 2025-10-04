@@ -2055,7 +2055,7 @@ INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
 ON CONFLICT (pid) DO UPDATE SET
     embedding = EXCLUDED.embedding,
-    updated_at = NOW()
+    created_at = NOW()
 `
 
 type UpsertEmbeddedProfilesParams struct {
