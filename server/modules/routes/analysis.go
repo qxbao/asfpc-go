@@ -17,5 +17,6 @@ func InitAnalysisRoutes(s *infras.Server) {
 	e.POST("/analysis/key/add", service.AddGeminiKey)
 	e.POST("/analysis/profile/analyze", service.AnalyzeProfileWithGemini)
 	e.DELETE("/analysis/key/delete", service.DeleteGeminiKey)
+	e.DELETE("/analysis/profile/delete_scores", service.ResetProfilesModelScore)
 	e.DELETE("/analysis/profile/delete_junk", service.DeleteJunkProfiles)
 }

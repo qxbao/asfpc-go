@@ -118,18 +118,7 @@ type ResidualStats struct {
 	BiasHighScores float64 `json:"bias_high_scores"`
 }
 
-type TopFeatures struct {
-	F769 float64 `json:"f769"`
-	F276 float64 `json:"f276"`
-	F768 float64 `json:"f768"`
-	F752 float64 `json:"f752"`
-	F545 float64 `json:"f545"`
-	F661 float64 `json:"f661"`
-	F584 float64 `json:"f584"`
-	F698 float64 `json:"f698"`
-	F720 float64 `json:"f720"`
-	F42  float64 `json:"f42"`
-}
+type TopFeatures map[string]float64
 
 type TrainParams map[string]any
 
@@ -305,9 +294,6 @@ func (s *MLRoutingService) DeleteModel(c echo.Context) error {
 
 	modelsDir := path.Join("python", "resources", "models")
 	modelPath := path.Join(path.Dir(exc), modelsDir, dto.ModelName)
-
-	// Log what we're about to delete for debugging
-	fmt.Printf("Deleting model path: %s\n", modelPath)
 
 	// Double-check the path is within the models directory
 	modelsBasePath := path.Join(path.Dir(exc), modelsDir)

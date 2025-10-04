@@ -24,6 +24,7 @@ class UserProfile(Base):
   bio: Mapped[str | None] = mapped_column(Text, nullable=True)
   location: Mapped[str | None] = mapped_column(String, nullable=True)
   work: Mapped[str | None] = mapped_column(Text, nullable=True)
+  hometown: Mapped[str | None] = mapped_column(String, nullable=True)
   education: Mapped[str | None] = mapped_column(Text, nullable=True)
   relationship_status: Mapped[str | None] = mapped_column(String, nullable=True)
   profile_url: Mapped[str] = mapped_column(String, nullable=False)

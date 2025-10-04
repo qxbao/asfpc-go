@@ -44,17 +44,17 @@ func (gs *GenerativeService) GenerateText(prompt string) (string, error) {
 
 	return response.Text(), nil
 }
-
-func (gs *GenerativeService) GenerateEmbedding(content string) ([]float32, error) {
-	var outputDimensionality int32 = 768
-	response, err := gs.client.Models.EmbedContent(gs.Context, gs.Model, genai.Text(content), &genai.EmbedContentConfig{
-		OutputDimensionality: &outputDimensionality,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate embedding: %v", err)
-	}
-	return response.Embeddings[0].Values, nil
-}
+// @Deprecated
+// func (gs *GenerativeService) GenerateEmbedding(content string) ([]float32, error) {
+// 	var outputDimensionality int32 = 1024
+// 	response, err := gs.client.Models.EmbedContent(gs.Context, gs.Model, genai.Text(content), &genai.EmbedContentConfig{
+// 		OutputDimensionality: &outputDimensionality,
+// 	})
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to generate embedding: %v", err)
+// 	}
+// 	return response.Embeddings[0].Values, nil
+// }
 
 func (gs *GenerativeService) SaveUsage(ctx context.Context, queries *db.Queries) error {
 	_, err := queries.UpdateGeminiKeyUsage(ctx, db.UpdateGeminiKeyUsageParams{

@@ -80,7 +80,7 @@ func embedProfiles(s *infras.Server, name string) Task {
 			analysisService := &analysis.AnalysisService{
 				Server: server,
 			}
-			analysisService.GeminiEmbeddingCronjob()
+			analysisService.SelfEmbeddingCronjob()
 		}, s),
 	}
 }

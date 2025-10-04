@@ -186,8 +186,8 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles;
 
--- name: GetProfileForEmbedding :many
-SELECT * FROM public.user_profile
+-- name: GetProfileIDForEmbedding :many
+SELECT id FROM public.user_profile
 WHERE id NOT IN (
   SELECT pid FROM public.embedded_profile
 ) AND is_scanned = true LIMIT $1;
@@ -196,6 +196,13 @@ WHERE id NOT IN (
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
 RETURNING *;
+
+-- name: UpsertEmbeddedProfiles :exec
+INSERT INTO public.embedded_profile (pid, embedding, created_at)
+VALUES ($1, $2, NOW())
+ON CONFLICT (pid) DO UPDATE SET
+    embedding = EXCLUDED.embedding,
+    updated_at = NOW();
 
 -- name: CountProfiles :one
 SELECT COUNT(*) as total_profiles FROM public.user_profile WHERE is_scanned = true;
@@ -206,6 +213,10 @@ SET updated_at = NOW(),
     is_scanned = TRUE
 WHERE id = $1
 RETURNING *;
+
+-- name: ResetProfilesModelScore :exec
+UPDATE public.user_profile
+SET model_score = NULL;
 
 -- name: UpdateGeminiAnalysisProfile :one
 UPDATE public.user_profile

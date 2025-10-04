@@ -46,7 +46,7 @@ class ModelUtility:
 
   @property
   def embedding_dimension(self) -> int:
-    return 768
+    return 1024
 
   def get_recommended_params(self, dataset_size: int) -> dict:
     """

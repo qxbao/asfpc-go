@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS public.embedded_profile
 (
     id SERIAL,
     pid integer NOT NULL,
-    embedding vector(768),
+    embedding vector(1024),
     created_at timestamp without time zone DEFAULT now(),
     CONSTRAINT embedded_profile_pkey PRIMARY KEY (id),
     CONSTRAINT embedded_profile_pid_fk FOREIGN KEY (pid)
