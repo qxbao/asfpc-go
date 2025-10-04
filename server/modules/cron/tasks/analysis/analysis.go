@@ -408,9 +408,9 @@ func (as *AnalysisService) ImportProfiles(c echo.Context) error {
 			Embedding: profile.Embedding,
 		})
 		if err != nil {
+			logger.Errorf("Failed to upsert embedded profile for profile ID %d: %v", p.ID, err)
 			continue
 		}
-
 		successCount++
 	}
 	return c.JSON(200, map[string]any{
