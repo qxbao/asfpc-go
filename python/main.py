@@ -56,8 +56,7 @@ class MainProcess:
         logging.basicConfig(
           level=logging.INFO,
           format="%(asctime)s [%(levelname)s] %(message)s",
-          filename=Path(logs_dir / f"{datetime.datetime.now(tz=datetime.UTC)
-                       .isoformat().replace(':', '-')}.log"),
+          filename=Path(logs_dir / f"{datetime.datetime.now(tz=datetime.UTC).isoformat().replace(':', '-')}.log"),
           filemode="w",
         )
       else:
