@@ -330,7 +330,7 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 	}
 	successCount := 0
 	for _, profile := range profiles {
-		p, err := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
+		p, _ := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
 			FacebookID:         profile.FacebookID,
 			Name:               profile.Name,
 			Bio:                profile.Bio,
@@ -351,17 +351,15 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 			IsAnalyzed:         profile.IsAnalyzed,
 			GeminiScore:        profile.GeminiScore,
 		})
-		if err != nil {
-			continue
-		}
-		_, err = as.Server.Queries.CreateEmbeddedProfile(c.Request().Context(), db.CreateEmbeddedProfileParams{
+
+		err := as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
 			Pid:       p.ID,
 			Embedding: profile.Embedding,
 		})
-
-		if err == nil {
-			successCount++
+		if err != nil {
+			continue
 		}
+		successCount++
 	}
 	return c.JSON(200, map[string]any{
 		"data": successCount,

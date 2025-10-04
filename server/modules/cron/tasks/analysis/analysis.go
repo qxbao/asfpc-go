@@ -3,9 +3,7 @@ package tasks
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -331,89 +329,5 @@ func (as *AnalysisService) DeleteJunkProfiles(c echo.Context) error {
 	}
 	return c.JSON(200, map[string]any{
 		"data": count,
-	})
-}
-
-func (as *AnalysisService) ExportProfiles(c echo.Context) error {
-	queries := as.Server.Queries
-	profiles, err := queries.GetProfilesForExport(c.Request().Context())
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get profiles: " + err.Error(),
-		})
-	}
-	if profiles == nil {
-		profiles = make([]db.GetProfilesForExportRow, 0)
-	}
-
-	c.Response().Header().Set(echo.HeaderContentType, "application/json")
-	c.Response().Header().Set(
-		echo.HeaderContentDisposition,
-		"attachment; filename=data.json",
-	)
-
-	enc := json.NewEncoder(c.Response().Writer)
-	c.Response().WriteHeader(http.StatusOK)
-	return enc.Encode(profiles)
-}
-
-func (as *AnalysisService) ImportProfiles(c echo.Context) error {
-	file, err := c.FormFile("file")
-	if err != nil {
-		return c.JSON(400, map[string]any{
-			"error": "Invalid file upload: " + err.Error(),
-		})
-	}
-	src, err := file.Open()
-	if err != nil {
-		return c.JSON(400, map[string]any{
-			"error": "Failed to open file: " + err.Error(),
-		})
-	}
-	defer src.Close()
-
-	var profiles []db.GetProfilesForExportRow
-
-	if err := json.NewDecoder(src).Decode(&profiles); err != nil {
-		return c.JSON(400, map[string]any{
-			"error": "Failed to parse JSON: " + err.Error(),
-		})
-	}
-	successCount := 0
-	for _, profile := range profiles {
-		p, _ := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
-			FacebookID:         profile.FacebookID,
-			Name:               profile.Name,
-			Bio:                profile.Bio,
-			Location:           profile.Location,
-			Work:               profile.Work,
-			Education:          profile.Education,
-			RelationshipStatus: profile.RelationshipStatus,
-			CreatedAt:          profile.CreatedAt,
-			UpdatedAt:          profile.UpdatedAt,
-			IsScanned:          profile.IsScanned,
-			Hometown:           profile.Hometown,
-			Locale:             profile.Locale,
-			Gender:             profile.Gender,
-			Birthday:           profile.Birthday,
-			Email:              profile.Email,
-			Phone:              profile.Phone,
-			ProfileUrl:         profile.ProfileUrl,
-			IsAnalyzed:         profile.IsAnalyzed,
-			GeminiScore:        profile.GeminiScore,
-		})
-
-		err := as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
-			Pid:       p.ID,
-			Embedding: profile.Embedding,
-		})
-		if err != nil {
-			logger.Errorf("Failed to upsert embedded profile for profile ID %d: %v", p.ID, err)
-			continue
-		}
-		successCount++
-	}
-	return c.JSON(200, map[string]any{
-		"data": successCount,
 	})
 }
