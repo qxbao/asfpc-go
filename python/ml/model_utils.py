@@ -17,7 +17,6 @@ from optuna.trial import Trial
 from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.metrics import r2_score, root_mean_squared_error
-from xgboost.callback import LearningRateScheduler
 
 from database.database import Database
 from database.services.request import RequestService
@@ -79,11 +78,10 @@ class ModelUtility:
           "subsample": 0.7,               # Aggressive row sampling
           "colsample_bytree": 0.7,        # Aggressive feature sampling
           "colsample_bylevel": 0.8,
-          "gamma": 0.25,                   # Strong pruning
+          "gamma": 0.25,                  # Strong pruning
           "reg_alpha": 1.0,               # Heavy L1 regularization
           "reg_lambda": 2.0,              # Heavy L2 regularization
           "nthread": 4,
-          "lr_decay": 0.9,
           "verbosity": 0,
           "nfold": 3
       }
@@ -105,7 +103,6 @@ class ModelUtility:
           "reg_alpha": 0.8,
           "reg_lambda": 2.0,
           "nthread": 4,
-          "lr_decay": 0.94,
           "verbosity": 0,
           "nfold": 4
       }
@@ -127,7 +124,6 @@ class ModelUtility:
           "reg_alpha": 0.6,
           "reg_lambda": 1.5,
           "nthread": 4,
-          "lr_decay": 0.96,
           "verbosity": 0,
           "nfold": 5
       }
@@ -148,7 +144,6 @@ class ModelUtility:
         "reg_alpha": 0.4,               # Lower L1 regularization
         "reg_lambda": 1.0,              # Lower L2 regularization
         "nthread": 4,
-        "lr_decay": 0.98,
         "verbosity": 0,
         "nfold": 5
     }
@@ -247,15 +242,11 @@ class ModelUtility:
             "gamma": trial.suggest_float("gamma", 0, 0.3),
             "reg_alpha": trial.suggest_float("reg_alpha", 0.2, 1.0),
             "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 2.0),
-            "lr_decay": trial.suggest_float("lr_decay", 0.9, 1.0),
           }
         )
         self.logger.info("Trial parameters: %s", params)
         n_estimators = trial.suggest_int("n_estimators", 100, 500)
         dtrain = xgb.DMatrix(x, label=y, enable_categorical=False)
-        lrdecay_callback = LearningRateScheduler(
-          lambda epoch: params["eta"] * (params["lr_decay"] ** epoch)
-        )
 
         cv_results = xgb.cv(
           params,
@@ -266,7 +257,6 @@ class ModelUtility:
           early_stopping_rounds=20,
           seed=42,
           shuffle=True,
-          callbacks=[lrdecay_callback],
           verbose_eval=False,
         )
 

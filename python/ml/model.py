@@ -242,6 +242,7 @@ class PotentialCustomerScoringModel:
         save_best=True
     ))
 
+
     try:
       self.logger.info("Training model with %s", "GPU" if self.use_gpu else "CPU")
       self.train_params = params
