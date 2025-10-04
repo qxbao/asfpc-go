@@ -262,7 +262,7 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 
 	pythonService := python.PythonService{
 		EnvName: os.Getenv("PYTHON_ENV_NAME"),
-		Log:     true,
+		Log:     false,
 		Silent:  true,
 	}
 	idStrs := make([]string, 0, len(profiles))
