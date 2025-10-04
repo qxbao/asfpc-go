@@ -261,10 +261,10 @@ SET model_score = $2
 WHERE id = $1;
 
 -- name: ImportProfile :one
-INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
+INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score) up
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 ON CONFLICT (facebook_id) DO NOTHING
-RETURNING *;
+RETURNING up.id;
 
 -- name: DeleteJunkProfiles :one
 WITH non_null_count AS (

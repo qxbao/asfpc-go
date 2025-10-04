@@ -2053,7 +2053,7 @@ func (q *Queries) UpsertConfig(ctx context.Context, arg UpsertConfigParams) (Con
 const upsertEmbeddedProfiles = `-- name: UpsertEmbeddedProfiles :exec
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
-ON CONFLICT (pid) DO UPDATE SET
+ON CONFLICT (embedded_profile_pid_fk) DO UPDATE SET
     embedding = EXCLUDED.embedding,
     created_at = NOW()
 `
