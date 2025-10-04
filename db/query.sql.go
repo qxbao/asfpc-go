@@ -1159,49 +1159,26 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 	return i, err
 }
 
-const getProfileForEmbedding = `-- name: GetProfileForEmbedding :many
-SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score FROM public.user_profile
+const getProfileIDForEmbedding = `-- name: GetProfileIDForEmbedding :many
+SELECT id FROM public.user_profile
 WHERE id NOT IN (
   SELECT pid FROM public.embedded_profile
 ) AND is_scanned = true LIMIT $1
 `
 
-func (q *Queries) GetProfileForEmbedding(ctx context.Context, limit int32) ([]UserProfile, error) {
-	rows, err := q.db.QueryContext(ctx, getProfileForEmbedding, limit)
+func (q *Queries) GetProfileIDForEmbedding(ctx context.Context, limit int32) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getProfileIDForEmbedding, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []UserProfile
+	var items []int32
 	for rows.Next() {
-		var i UserProfile
-		if err := rows.Scan(
-			&i.ID,
-			&i.FacebookID,
-			&i.Name,
-			&i.Bio,
-			&i.Location,
-			&i.Work,
-			&i.Education,
-			&i.RelationshipStatus,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ScrapedByID,
-			&i.IsScanned,
-			&i.Hometown,
-			&i.Locale,
-			&i.Gender,
-			&i.Birthday,
-			&i.Email,
-			&i.Phone,
-			&i.ProfileUrl,
-			&i.IsAnalyzed,
-			&i.GeminiScore,
-			&i.ModelScore,
-		); err != nil {
+		var id int32
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1755,6 +1732,16 @@ func (q *Queries) LogAction(ctx context.Context, arg LogActionParams) error {
 	return err
 }
 
+const resetProfilesModelScore = `-- name: ResetProfilesModelScore :exec
+UPDATE public.user_profile
+SET model_score = NULL
+`
+
+func (q *Queries) ResetProfilesModelScore(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetProfilesModelScore)
+	return err
+}
+
 const updateAccountAccessToken = `-- name: UpdateAccountAccessToken :one
 UPDATE public.account
 SET updated_at = NOW(), access_token = $2
@@ -2060,4 +2047,22 @@ func (q *Queries) UpsertConfig(ctx context.Context, arg UpsertConfigParams) (Con
 	var i Config
 	err := row.Scan(&i.ID, &i.Key, &i.Value)
 	return i, err
+}
+
+const upsertEmbeddedProfiles = `-- name: UpsertEmbeddedProfiles :exec
+INSERT INTO public.embedded_profile (pid, embedding, created_at)
+VALUES ($1, $2, NOW())
+ON CONFLICT (pid) DO UPDATE SET
+    embedding = EXCLUDED.embedding,
+    updated_at = NOW()
+`
+
+type UpsertEmbeddedProfilesParams struct {
+	Pid       int32
+	Embedding Vector
+}
+
+func (q *Queries) UpsertEmbeddedProfiles(ctx context.Context, arg UpsertEmbeddedProfilesParams) error {
+	_, err := q.db.ExecContext(ctx, upsertEmbeddedProfiles, arg.Pid, arg.Embedding)
+	return err
 }

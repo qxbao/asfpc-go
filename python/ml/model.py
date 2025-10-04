@@ -27,7 +27,7 @@ class PotentialCustomerScoringModel:
     self.model = None
     self.encoders = {}
     self.scaler = None
-    self.embedding_dim = 768
+    self.embedding_dim = 1024
     self.logger = logging.getLogger(__name__)
     self.rs = RequestService()
 

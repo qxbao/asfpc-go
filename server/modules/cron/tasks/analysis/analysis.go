@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/qxbao/asfpc/pkg/generative"
 	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils/prompt"
+	"github.com/qxbao/asfpc/pkg/utils/python"
 )
 
 type AnalysisService struct {
@@ -228,8 +230,8 @@ func (as *AnalysisService) GetGeminiKeys(c echo.Context) error {
 
 var defaultEmbeddingLimit int32 = 100
 
-func (as *AnalysisService) GeminiEmbeddingCronjob() {
-	logger.Info("Starting Gemini embedding cronjob")
+func (as *AnalysisService) SelfEmbeddingCronjob() {
+	logger.Info("Starting Self-embedding cronjob")
 	ctx := context.Background()
 	defer ctx.Done()
 
@@ -241,85 +243,44 @@ func (as *AnalysisService) GeminiEmbeddingCronjob() {
 		limit = int64(defaultEmbeddingLimit)
 	}
 
-	profiles, err := as.Server.Queries.GetProfileForEmbedding(ctx, int32(limit))
-	if err != nil {
-		logger.Errorf("Failed to get profiles for embedding: %v", err)
-		return
-	}
-	apiKey, err := as.Server.Queries.GetGeminiKeyForUse(ctx)
-
+	profiles, err := as.Server.Queries.GetProfileIDForEmbedding(ctx, int32(limit))
 	if err != nil {
 		logger.Errorf("Failed to get gemini key: %v", err)
 		return
 	}
-	generativeService := generative.GetGenerativeService(apiKey.ApiKey, "gemini-embedding-001")
-	err = generativeService.Init()
 
-	if err != nil {
-		logger.Errorf("Failed to initialize generative service: %v", err)
+	if len(profiles) == 0 {
+		logger.Info("No profiles to embed. Exiting cronjob.")
 		return
 	}
 
 	ps := prompt.PromptService{Server: as.Server}
-	prompt, err := ps.GetPrompt(ctx, "gemini-embedding")
+	_, err = ps.GetPrompt(ctx, "self-embedding")
 
 	if err != nil {
-		logger.Errorf("Failed to get prompt (gemini-embedding): %v", err)
+		logger.Errorf("Failed to get prompt (self-embedding): %v", err)
 		return
 	}
 
-	semaphore := async.GetSemaphore[infras.GeminiEmbeddingTaskInput, bool](5)
-
-	for _, profile := range profiles {
-		profilePromptContent := ps.ReplacePrompt(prompt.Content,
-			profile.Name.String,
-			profile.Location.String,
-			profile.Work.String,
-			profile.Bio.String,
-			profile.Education.String,
-			profile.RelationshipStatus.String,
-			profile.Hometown.String,
-			profile.Locale,
-			profile.Gender.String,
-			profile.Birthday.String,
-		)
-		semaphore.Assign(as.geminiEmbeddingTask, infras.GeminiEmbeddingTaskInput{
-			Ctx:     ctx,
-			Profile: &profile,
-			Prompt:  profilePromptContent,
-			Gs:      generativeService,
-		})
+	pythonService := python.PythonService{
+		EnvName: os.Getenv("PYTHON_ENV_NAME"),
+		Log:     true,
+		Silent:  true,
 	}
-	_, errs := semaphore.Run()
-	generativeService.SaveUsage(ctx, as.Server.Queries)
-	count := 0
-	for i, err := range errs {
-		if err != nil {
-			logger.Errorf("Failed to process profile %d: %v", profiles[i].ID, err.Error())
-		} else {
-			count++
-		}
+	idStrs := make([]string, 0, len(profiles))
+	for _, profileId := range profiles {
+		idStrs = append(idStrs, fmt.Sprintf("%d", profileId))
 	}
-	logger.Infof("Gemini embedding cronjob completed: %d/%d profiles processed successfully", count, len(profiles))
-}
-
-func (as *AnalysisService) geminiEmbeddingTask(input infras.GeminiEmbeddingTaskInput) bool {
-	response, err := input.Gs.GenerateEmbedding(input.Prompt)
+	idStr := strings.Join(idStrs, ",")
+	output, err := pythonService.RunScript("--task=embed",
+		fmt.Sprintf("--targets=%s", idStr),
+	)
 
 	if err != nil {
-		panic(fmt.Errorf("failed to generate embedding: %v", err))
+		logger.Errorf("Failed to run embedding script: %v", err)
+		return
 	}
-
-	_, err = as.Server.Queries.CreateEmbeddedProfile(input.Ctx, db.CreateEmbeddedProfileParams{
-		Pid:       input.Profile.ID,
-		Embedding: response,
-	})
-
-	if err != nil {
-		panic(fmt.Errorf("failed to create embedded profile: %v", err))
-	}
-
-	return true
+	logger.Info("Embedding script output: " + output)
 }
 
 func (as *AnalysisService) AddGeminiKey(c echo.Context) error {
@@ -420,7 +381,7 @@ func (as *AnalysisService) ImportProfiles(c echo.Context) error {
 	}
 	successCount := 0
 	for _, profile := range profiles {
-		p, err := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
+		p, _ := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
 			FacebookID:         profile.FacebookID,
 			Name:               profile.Name,
 			Bio:                profile.Bio,
@@ -441,17 +402,16 @@ func (as *AnalysisService) ImportProfiles(c echo.Context) error {
 			IsAnalyzed:         profile.IsAnalyzed,
 			GeminiScore:        profile.GeminiScore,
 		})
-		if err != nil {
-			continue
-		}
-		_, err = as.Server.Queries.CreateEmbeddedProfile(c.Request().Context(), db.CreateEmbeddedProfileParams{
+
+		err := as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
 			Pid:       p.ID,
 			Embedding: profile.Embedding,
 		})
-
-		if err == nil {
-			successCount++
+		if err != nil {
+			continue
 		}
+
+		successCount++
 	}
 	return c.JSON(200, map[string]any{
 		"data": successCount,

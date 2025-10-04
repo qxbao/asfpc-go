@@ -5,6 +5,7 @@ import (
 
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/pkg/generative"
+	"github.com/qxbao/asfpc/pkg/utils/python"
 )
 
 type GeminiScoringTaskInput struct {
@@ -16,7 +17,6 @@ type GeminiScoringTaskInput struct {
 
 type GeminiEmbeddingTaskInput struct {
 	Ctx     context.Context
-	Gs      *generative.GenerativeService
-	Prompt  string
-	Profile *db.UserProfile
+	Id      int32
+	Ps      python.PythonService
 }

@@ -12,8 +12,9 @@ from browser.group import GroupAutomationService
 from database.services.account import AccountService
 from database.services.group import GroupService
 from database.services.profile import ProfileService
+from database.services.prompt import PromptService
 from database.services.request import RequestService
-from ml.model import PotentialCustomerScoringModel
+from ml import BGEM3EmbedModel, PotentialCustomerScoringModel
 from utils.dialog import DialogUtil
 
 
@@ -159,3 +160,63 @@ class TaskNavigator:
     for i in range(len(id_list)):
       res_obj[str(id_list[i])] = result[i]
     print(json.dumps(res_obj))  # noqa: T201
+
+  async def embed_profiles(self) -> None:
+    targets = self.config.get("targets", None)
+    if not targets:
+      err_msg = "Argument --targets is required"
+      raise Exception(err_msg)
+    match = re.match(r"^([0-9]+[,]?)*[0-9]+$", targets)
+    if not match:
+      err_msg = "Argument --targets format is invalid. Example: 1,2,3"
+      raise Exception(err_msg)
+
+    id_set = {int(x) for x in targets.split(",")}
+    id_list = list(id_set)
+    model = BGEM3EmbedModel()
+    profile_service = ProfileService()
+    prompt_service = PromptService()
+    template = await prompt_service.get_prompt("self-embedding")
+    if not template:
+      err_msg = "Prompt 'self-embedding' not found in database"
+      raise Exception(err_msg)
+
+    sem = asyncio.Semaphore(10)
+
+    async def get_embedding(profile_id: int) -> list[float] | None:
+      profile = await profile_service.get_profile_by_id(profile_id)
+      if not profile:
+        return None
+      my_temp = template
+      final_str = prompt_service.inject_prompt(
+        my_temp,
+        profile.name,
+        profile.location,
+        profile.work,
+        profile.bio,
+        profile.education,
+        profile.relationship_status,
+        profile.hometown,
+        profile.locale,
+        profile.gender,
+        profile.birthday,
+      )
+      embedding = model.embed([final_str])
+      if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0], list):
+        return embedding[0]
+      if isinstance(embedding, list) and all(isinstance(x, float) for x in embedding):
+        return embedding # type: ignore[return-value]
+      return None
+
+    async def semaphore_proc(sem, i):
+      async with sem:
+        return await get_embedding(id_list[i])
+    tasks = [semaphore_proc(sem, i) for i in range(len(id_list))]
+    results = await asyncio.gather(*tasks)
+    success_count = 0
+    for pid, emb in zip(id_list, results, strict=True):
+      if emb is None:
+        continue
+      if await profile_service.insert_profile_embedding(pid, emb):
+        success_count += 1
+    print(f"Embeddings generated for {success_count}/{len(id_list)} profiles")  # noqa: T201

@@ -244,6 +244,19 @@ func (as *AnalysisRoutingService) DeleteJunkProfiles(c echo.Context) error {
 	})
 }
 
+func (as *AnalysisRoutingService) ResetProfilesModelScore(c echo.Context) error {
+	queries := as.Server.Queries
+	err := queries.ResetProfilesModelScore(c.Request().Context())
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to reset profiles model score: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data": "success",
+	})
+}
+
 func (as *AnalysisRoutingService) ExportProfiles(c echo.Context) error {
 	queries := as.Server.Queries
 	profiles, err := queries.GetProfilesForExport(c.Request().Context())

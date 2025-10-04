@@ -94,6 +94,9 @@ class MainProcess:
       sys.exit(0)
     elif task == "predict":
       await task_navigator.predict()
+    elif task == "embed":
+      await task_navigator.embed_profiles()
+      sys.exit(0)
     else:
       self.logger.error("Unknown task: %s", task)
       sys.exit(1)
