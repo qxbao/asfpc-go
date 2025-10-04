@@ -1635,6 +1635,7 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 const importProfile = `-- name: ImportProfile :one
 INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+ON CONFLICT (facebook_id) DO NOTHING
 RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
 `
 

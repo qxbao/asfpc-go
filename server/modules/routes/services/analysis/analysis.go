@@ -11,6 +11,7 @@ import (
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/pkg/generative"
+	"github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils/prompt"
 )
 
@@ -330,7 +331,7 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 	}
 	successCount := 0
 	for _, profile := range profiles {
-		p, _ := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
+		p, err := as.Server.Queries.ImportProfile(c.Request().Context(), db.ImportProfileParams{
 			FacebookID:         profile.FacebookID,
 			Name:               profile.Name,
 			Bio:                profile.Bio,
@@ -351,12 +352,15 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 			IsAnalyzed:         profile.IsAnalyzed,
 			GeminiScore:        profile.GeminiScore,
 		})
-
-		err := as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
+		if err != nil {
+			logger.GetLogger("ARS").Errorf("Failed to import profile for Facebook ID %s: %v", profile.FacebookID, err)
+		}
+		err = as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
 			Pid:       p.ID,
 			Embedding: profile.Embedding,
 		})
 		if err != nil {
+			logger.GetLogger("ARS").Errorf("Failed to upsert embedded profile for profile ID %d: %v", p.ID, err)
 			continue
 		}
 		successCount++
