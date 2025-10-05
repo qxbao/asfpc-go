@@ -160,3 +160,58 @@ func (ds *DataRoutingService) GetLogs(c echo.Context) error {
 		"total": count,
 	})
 }
+
+// Charts API Services
+
+func (ds *DataRoutingService) GetDashboardStats(c echo.Context) error {
+	queries := ds.Server.Queries
+	stats, err := queries.GetDashboardStats(c.Request().Context())
+
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to get dashboard stats: " + err.Error(),
+		})
+	}
+
+	return c.JSON(200, map[string]any{
+		"data": stats,
+	})
+}
+
+func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
+	queries := ds.Server.Queries
+	data, err := queries.GetTimeSeriesData(c.Request().Context())
+
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to get time series data: " + err.Error(),
+		})
+	}
+
+	if data == nil {
+		data = make([]db.GetTimeSeriesDataRow, 0)
+	}
+
+	return c.JSON(200, map[string]any{
+		"data": data,
+	})
+}
+
+func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
+	queries := ds.Server.Queries
+	data, err := queries.GetScoreDistribution(c.Request().Context())
+
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to get score distribution: " + err.Error(),
+		})
+	}
+
+	if data == nil {
+		data = make([]db.GetScoreDistributionRow, 0)
+	}
+
+	return c.JSON(200, map[string]any{
+		"data": data,
+	})
+}

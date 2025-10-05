@@ -720,6 +720,56 @@ func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error
 	return i, err
 }
 
+const getDashboardStats = `-- name: GetDashboardStats :one
+
+SELECT
+  (SELECT COUNT(*) FROM public."group") AS total_groups,
+  (SELECT COUNT(*) FROM public.comment) AS total_comments,
+  (SELECT COUNT(*) FROM public.post) AS total_posts,
+  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles,
+  (SELECT COUNT(*) FROM public.account) AS total_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = true) AS blocked_accounts
+`
+
+type GetDashboardStatsRow struct {
+	TotalGroups      int64
+	TotalComments    int64
+	TotalPosts       int64
+	TotalProfiles    int64
+	EmbeddedCount    int64
+	ScannedProfiles  int64
+	ScoredProfiles   int64
+	AnalyzedProfiles int64
+	TotalAccounts    int64
+	ActiveAccounts   int64
+	BlockedAccounts  int64
+}
+
+// Charts API Queries
+func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getDashboardStats)
+	var i GetDashboardStatsRow
+	err := row.Scan(
+		&i.TotalGroups,
+		&i.TotalComments,
+		&i.TotalPosts,
+		&i.TotalProfiles,
+		&i.EmbeddedCount,
+		&i.ScannedProfiles,
+		&i.ScoredProfiles,
+		&i.AnalyzedProfiles,
+		&i.TotalAccounts,
+		&i.ActiveAccounts,
+		&i.BlockedAccounts,
+	)
+	return i, err
+}
+
 const getGeminiKeyForUse = `-- name: GetGeminiKeyForUse :one
 SELECT id, api_key, token_used, updated_at FROM public.gemini_key ORDER BY updated_at ASC NULLS FIRST LIMIT 1
 `
@@ -1680,6 +1730,57 @@ func (q *Queries) GetRequestById(ctx context.Context, id int32) (Request, error)
 	return i, err
 }
 
+const getScoreDistribution = `-- name: GetScoreDistribution :many
+WITH scored_profiles AS (
+  SELECT
+    CASE 
+      WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+      ELSE 'unknown'
+    END as score_range
+  FROM public.user_profile
+  WHERE gemini_score IS NOT NULL
+)
+SELECT
+  score_range,
+  COUNT(*) as count,
+  ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
+FROM scored_profiles
+GROUP BY score_range
+`
+
+type GetScoreDistributionRow struct {
+	ScoreRange string
+	Count      int64
+	Percentage string
+}
+
+func (q *Queries) GetScoreDistribution(ctx context.Context) ([]GetScoreDistributionRow, error) {
+	rows, err := q.db.QueryContext(ctx, getScoreDistribution)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetScoreDistributionRow
+	for rows.Next() {
+		var i GetScoreDistributionRow
+		if err := rows.Scan(&i.ScoreRange, &i.Count, &i.Percentage); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getStats = `-- name: GetStats :one
 SELECT
   (SELECT COUNT(*) FROM public."group") AS total_groups,
@@ -1698,6 +1799,62 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 	var i GetStatsRow
 	err := row.Scan(&i.TotalGroups, &i.TotalComments, &i.TotalPosts)
 	return i, err
+}
+
+const getTimeSeriesData = `-- name: GetTimeSeriesData :many
+SELECT 
+  DATE_TRUNC('month', created_at)::date as date,
+  COUNT(*) as count,
+  'profiles' as data_type
+FROM public.user_profile 
+WHERE created_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('month', created_at)
+UNION ALL
+SELECT 
+  DATE_TRUNC('month', created_at)::date as date,
+  COUNT(*) as count,
+  'posts' as data_type
+FROM public.post 
+WHERE created_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('month', created_at)
+UNION ALL
+SELECT 
+  DATE_TRUNC('month', inserted_at)::date as date,
+  COUNT(*) as count,
+  'comments' as data_type
+FROM public.comment 
+WHERE inserted_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('month', inserted_at)
+ORDER BY date, data_type
+`
+
+type GetTimeSeriesDataRow struct {
+	Date     time.Time
+	Count    int64
+	DataType string
+}
+
+func (q *Queries) GetTimeSeriesData(ctx context.Context) ([]GetTimeSeriesDataRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTimeSeriesData)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTimeSeriesDataRow
+	for rows.Next() {
+		var i GetTimeSeriesDataRow
+		if err := rows.Scan(&i.Date, &i.Count, &i.DataType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const importProfile = `-- name: ImportProfile :one
