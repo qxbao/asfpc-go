@@ -472,7 +472,7 @@ SELECT
   'posts' as data_type
 FROM public.post 
 WHERE created_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', created_at)
+GROUP BY DATE_TRUNC('month', inserted_at)
 UNION ALL
 SELECT 
   DATE_TRUNC('month', inserted_at)::date as date,
@@ -484,26 +484,22 @@ GROUP BY DATE_TRUNC('month', inserted_at)
 ORDER BY date, data_type;
 
 -- name: GetScoreDistribution :many
-SELECT 
-  CASE 
-    WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
-    WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
-    WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
-    WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
-    WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-    ELSE 'unknown'
-  END as score_range,
+WITH scored_profiles AS (
+  SELECT
+    CASE 
+      WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+      ELSE 'unknown'
+    END as score_range
+  FROM public.user_profile
+  WHERE gemini_score IS NOT NULL
+)
+SELECT
+  score_range,
   COUNT(*) as count,
   ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
-FROM public.user_profile 
-WHERE gemini_score IS NOT NULL
-GROUP BY 
-  CASE 
-    WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
-    WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
-    WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
-    WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
-    WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-    ELSE 'unknown'
-  END
-ORDER BY score_range;
+FROM scored_profiles
+GROUP BY score_range
