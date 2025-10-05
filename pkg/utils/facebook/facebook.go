@@ -83,7 +83,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password s
 
 	// Log raw response before parsing
 	bodyStr := resp.String()
-	
+
 	// Parse response
 	err = json.Unmarshal([]byte(bodyStr), &atResponse)
 	if err != nil {
@@ -128,7 +128,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 
 	// Log raw response before parsing
 	bodyStr := resp.String()
-	
+
 	// Parse response
 	err = json.Unmarshal([]byte(bodyStr), &atResponse)
 	if err != nil {
