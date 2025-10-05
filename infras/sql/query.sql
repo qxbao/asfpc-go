@@ -440,3 +440,70 @@ ORDER BY ep.embedding <=> (
 	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
   )
 LIMIT $2;
+
+-- Charts API Queries
+
+-- name: GetDashboardStats :one
+SELECT
+  (SELECT COUNT(*) FROM public."group") AS total_groups,
+  (SELECT COUNT(*) FROM public.comment) AS total_comments,
+  (SELECT COUNT(*) FROM public.post) AS total_posts,
+  (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
+  (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles,
+  (SELECT COUNT(*) FROM public.account) AS total_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
+  (SELECT COUNT(*) FROM public.account WHERE is_block = true) AS blocked_accounts;
+
+-- name: GetTimeSeriesData :many
+SELECT 
+  DATE_TRUNC('month', created_at)::date as date,
+  COUNT(*) as count,
+  'profiles' as data_type
+FROM public.user_profile 
+WHERE created_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('month', created_at)
+UNION ALL
+SELECT 
+  DATE_TRUNC('month', created_at)::date as date,
+  COUNT(*) as count,
+  'posts' as data_type
+FROM public.post 
+WHERE created_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('month', created_at)
+UNION ALL
+SELECT 
+  DATE_TRUNC('month', inserted_at)::date as date,
+  COUNT(*) as count,
+  'comments' as data_type
+FROM public.comment 
+WHERE inserted_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('month', inserted_at)
+ORDER BY date, data_type;
+
+-- name: GetScoreDistribution :many
+SELECT 
+  CASE 
+    WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+    WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+    WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+    WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+    WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    ELSE 'unknown'
+  END as score_range,
+  COUNT(*) as count,
+  ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
+FROM public.user_profile 
+WHERE gemini_score IS NOT NULL
+GROUP BY 
+  CASE 
+    WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+    WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+    WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+    WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+    WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    ELSE 'unknown'
+  END
+ORDER BY score_range;
