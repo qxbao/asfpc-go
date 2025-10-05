@@ -67,85 +67,93 @@ class ModelUtility:
     """
     # Small dataset: Prevent overfitting aggressively
     if dataset_size < self.SMALL_DATASET_THRESHOLD:
-      self.logger.info("Small dataset (%d samples): Using high regularization", dataset_size)
+      self.logger.info(
+        "Small dataset (%d samples): Using high regularization", dataset_size
+      )
       return {
-          "booster": "gbtree",
-          "grow_policy": "depthwise",     # Simpler growth for small data
-          "eta": 0.05,                    # Higher LR for faster convergence
-          "max_depth": 3,                 # Shallow trees to prevent overfit
-          "max_leaves": 32,               # Fewer leaves
-          "min_child_weight": 5,          # Strong constraint on splits
-          "subsample": 0.7,               # Aggressive row sampling
-          "colsample_bytree": 0.7,        # Aggressive feature sampling
-          "colsample_bylevel": 0.8,
-          "gamma": 0.25,                  # Strong pruning
-          "reg_alpha": 1.0,               # Heavy L1 regularization
-          "reg_lambda": 2.0,              # Heavy L2 regularization
-          "nthread": 4,
-          "verbosity": 0,
-          "nfold": 3
+        "booster": "gbtree",
+        "grow_policy": "depthwise",  # Simpler growth for small data
+        "eta": 0.05,  # Higher LR for faster convergence
+        "max_depth": 3,  # Shallow trees to prevent overfit
+        "max_leaves": 32,  # Fewer leaves
+        "min_child_weight": 5,  # Strong constraint on splits
+        "subsample": 0.7,  # Aggressive row sampling
+        "colsample_bytree": 0.7,  # Aggressive feature sampling
+        "colsample_bylevel": 0.8,
+        "gamma": 0.25,  # Strong pruning
+        "reg_alpha": 1.0,  # Heavy L1 regularization
+        "reg_lambda": 2.0,  # Heavy L2 regularization
+        "nthread": 4,
+        "verbosity": 0,
+        "nfold": 3,
       }
 
     # Medium dataset: Balanced approach
     if dataset_size < self.MEDIUM_DATASET_THRESHOLD:
-      self.logger.info("Medium dataset (%d samples): Using balanced parameters", dataset_size)
+      self.logger.info(
+        "Medium dataset (%d samples): Using balanced parameters", dataset_size
+      )
       return {
-          "booster": "gbtree",
-          "grow_policy": "lossguide",
-          "eta": 0.03,
-          "max_depth": 4,                 # Moderate depth
-          "max_leaves": 48,               # Moderate complexity
-          "min_child_weight": 6,
-          "subsample": 0.75,
-          "colsample_bytree": 0.7,
-          "colsample_bylevel": 0.75,
-          "gamma": 0.2,
-          "reg_alpha": 0.8,
-          "reg_lambda": 2.0,
-          "nthread": 4,
-          "verbosity": 0,
-          "nfold": 4
+        "booster": "gbtree",
+        "grow_policy": "lossguide",
+        "eta": 0.03,
+        "max_depth": 4,  # Moderate depth
+        "max_leaves": 48,  # Moderate complexity
+        "min_child_weight": 6,
+        "subsample": 0.75,
+        "colsample_bytree": 0.7,
+        "colsample_bylevel": 0.75,
+        "gamma": 0.2,
+        "reg_alpha": 0.8,
+        "reg_lambda": 2.0,
+        "nthread": 4,
+        "verbosity": 0,
+        "nfold": 4,
       }
 
     # Large dataset: Standard regularization
     if dataset_size < self.LARGE_DATASET_THRESHOLD:
-      self.logger.info("Large dataset (%d samples): Using standard regularization", dataset_size)
+      self.logger.info(
+        "Large dataset (%d samples): Using standard regularization", dataset_size
+      )
       return {
-          "booster": "gbtree",
-          "grow_policy": "lossguide",
-          "eta": 0.03,
-          "max_depth": 5,
-          "max_leaves": 64,
-          "min_child_weight": 4,
-          "subsample": 0.8,
-          "colsample_bytree": 0.7,
-          "colsample_bylevel": 0.8,
-          "gamma": 0.15,
-          "reg_alpha": 0.6,
-          "reg_lambda": 1.5,
-          "nthread": 4,
-          "verbosity": 0,
-          "nfold": 5
+        "booster": "gbtree",
+        "grow_policy": "lossguide",
+        "eta": 0.03,
+        "max_depth": 5,
+        "max_leaves": 64,
+        "min_child_weight": 4,
+        "subsample": 0.8,
+        "colsample_bytree": 0.7,
+        "colsample_bylevel": 0.8,
+        "gamma": 0.15,
+        "reg_alpha": 0.6,
+        "reg_lambda": 1.5,
+        "nthread": 4,
+        "verbosity": 0,
+        "nfold": 5,
       }
 
     # Very large dataset: Allow more model complexity
-    self.logger.info("Very large dataset (%d samples): Using lower regularization", dataset_size)
+    self.logger.info(
+      "Very large dataset (%d samples): Using lower regularization", dataset_size
+    )
     return {
-        "booster": "gbtree",
-        "grow_policy": "lossguide",
-        "eta": 0.02,                    # Lower LR for fine-tuning
-        "max_depth": 6,                 # Deeper trees possible
-        "max_leaves": 96,               # More leaves for complex patterns
-        "min_child_weight": 3,          # Allow smaller splits
-        "subsample": 0.85,              # Less aggressive sampling
-        "colsample_bytree": 0.75,
-        "colsample_bylevel": 0.85,
-        "gamma": 0.1,                   # Lighter pruning
-        "reg_alpha": 0.4,               # Lower L1 regularization
-        "reg_lambda": 1.0,              # Lower L2 regularization
-        "nthread": 4,
-        "verbosity": 0,
-        "nfold": 5
+      "booster": "gbtree",
+      "grow_policy": "lossguide",
+      "eta": 0.02,  # Lower LR for fine-tuning
+      "max_depth": 6,  # Deeper trees possible
+      "max_leaves": 96,  # More leaves for complex patterns
+      "min_child_weight": 3,  # Allow smaller splits
+      "subsample": 0.85,  # Less aggressive sampling
+      "colsample_bytree": 0.75,
+      "colsample_bylevel": 0.85,
+      "gamma": 0.1,  # Lighter pruning
+      "reg_alpha": 0.4,  # Lower L1 regularization
+      "reg_lambda": 1.0,  # Lower L2 regularization
+      "nthread": 4,
+      "verbosity": 0,
+      "nfold": 5,
     }
 
   def get_base_params(self, use_gpu: bool) -> dict:
@@ -202,6 +210,31 @@ class ModelUtility:
       return 384  # Large dataset: More granularity
     return 512  # Very large dataset: Maximum granularity for complex patterns
 
+  def get_tuning_sample_size(self, dataset_size: int) -> int:
+    """
+    Get optimal sample size for hyperparameter tuning based on dataset size.
+
+    Strategy:
+        - Small (<2k): 50% of data
+        - Medium (2k-5k): 60%, capped at 3k
+        - Large (5k-10k): 70%, capped at 8k
+        - Very Large (>10k): 50%, capped at 10k
+
+    Args:
+        dataset_size: Total number of training samples
+
+    Returns:
+        Optimal sample size for Optuna hyperparameter tuning
+
+    """
+    if dataset_size < self.SMALL_DATASET_THRESHOLD:
+      return int(dataset_size * 0.5)
+    if dataset_size < self.MEDIUM_DATASET_THRESHOLD:
+      return min(int(dataset_size * 0.6), 3000)
+    if dataset_size < self.LARGE_DATASET_THRESHOLD:
+      return min(int(dataset_size * 0.7), 8000)
+    return min(int(dataset_size * 0.5), 10000)
+
   def get_nfold(self, dataset_size: int) -> int:
     if dataset_size < self.SMALL_DATASET_THRESHOLD:
       return 3
@@ -215,6 +248,9 @@ class ModelUtility:
     """Create a callback to update request status during Optuna trials."""
     return UpdateRequestCallback(request_id, self.logger, total_trials)
 
+  def bounded(self, val: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, val))
+
   def get_optuna_objective(
     self, x: np.ndarray, y: np.ndarray, use_gpu: bool
   ) -> ObjectiveFuncType:
@@ -224,24 +260,56 @@ class ModelUtility:
     def objective(trial: Trial) -> float | Sequence[float]:
       try:
         params = base_params.copy()
-        grow_policy = trial.suggest_categorical("grow_policy", ["depthwise", "lossguide"])
+        params.update(self.get_recommended_params(len(x)))
         params.update(
           {
-            "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
-            "grow_policy": grow_policy,
             "verbosity": 0,
-            "nthread": trial.suggest_int("nthread", 1, 8),
-            "eta": trial.suggest_float("eta", 0.01, 0.07, log=True),
-            "max_depth": trial.suggest_int("max_depth", 3, 6),
-            "max_leaves": trial.suggest_int("max_leaves", 16, 256) if grow_policy == "lossguide" else 0,
-            "min_child_weight": trial.suggest_float("min_child_weight", 2, 8),
-            "subsample": trial.suggest_float("subsample", 0.7, 0.9),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.85),
+            "eta": trial.suggest_float(
+              "eta",
+              self.bounded(params.get("eta", 0.1) * 0.5, 0.001, 1.0),
+              self.bounded(params.get("eta", 0.1) * 1.5, 0.001, 1.0),
+              log=True,
+            ),
+            "max_depth": trial.suggest_int(
+              "max_depth",
+              max(1, params.get("max_depth", 6) - 2),
+              params.get("max_depth", 6) + 2,
+            ),
+            "max_leaves": (
+              trial.suggest_int("max_leaves", max(16, params.get("max_leaves", 64) - 32), params.get("max_leaves", 64) + 32)
+            ),
+            "min_child_weight": trial.suggest_float(
+              "min_child_weight",
+              max(1, params.get("min_child_weight", 5) - 2),
+              params.get("min_child_weight", 5) + 2,
+            ),
+            "subsample": trial.suggest_float(
+              "subsample",
+              max(0.5, params.get("subsample", 0.8) - 0.2),
+              min(1.0, params.get("subsample", 0.8) + 0.1),
+            ),
+            "colsample_bytree": trial.suggest_float(
+              "colsample_bytree",
+              max(0.5, params.get("colsample_bytree", 0.8) - 0.2),
+              min(1.0, params.get("colsample_bytree", 0.8) + 0.1),
+            ),
             "colsample_bylevel": trial.suggest_float("colsample_bylevel", 0.6, 1.0),
             "colsample_bynode": trial.suggest_float("colsample_bynode", 0.6, 1.0),
-            "gamma": trial.suggest_float("gamma", 0, 0.3),
-            "reg_alpha": trial.suggest_float("reg_alpha", 0.2, 1.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 2.0),
+            "gamma": trial.suggest_float(
+              "gamma",
+              max(0.0, params.get("gamma", 0.2) - 0.2),
+              params.get("gamma", 0.2) + 0.2,
+            ),
+            "reg_alpha": trial.suggest_float(
+              "reg_alpha",
+              max(0.0, params.get("reg_alpha", 0.1) - 0.2),
+              params.get("reg_alpha", 0.1) + 0.2,
+            ),
+            "reg_lambda": trial.suggest_float(
+              "reg_lambda",
+              max(0.0, params.get("reg_lambda", 1.0) - 0.5),
+              params.get("reg_lambda", 1.0) + 0.5,
+            ),
           }
         )
         self.logger.info("Trial parameters: %s", params)
@@ -268,9 +336,7 @@ class ModelUtility:
         del dtrain
         gc.collect()
       except Exception as e:  # noqa: BLE001
-        self.logger.warning(
-          "Trial failed with %s: %s", "GPU" if use_gpu else "CPU", e
-        )
+        self.logger.warning("Trial failed with %s: %s", "GPU" if use_gpu else "CPU", e)
         if use_gpu:
           gc.collect()
         return float("inf")
@@ -312,23 +378,24 @@ class ModelUtility:
     cate_features = ["gender", "locale", "relationship_status"]
     x_cate = []
     for col in cate_features:
-      # Use frequency-based encoding for high-cardinality features
       min_freq = 0.01 if col == "locale" else 0.005  # Stricter for locale
       encoded_values = self.encode_with_frequency(df, col, encoders, min_freq=min_freq)
       x_cate.append(encoded_values)
     x_cate = np.vstack(x_cate).T
-    # Keep NaN for missing age values - XGBoost handles them natively
-    x_age = df["birthday"]\
-        .fillna("")\
-        .infer_objects(copy=False)\
-        .apply(self.get_age)\
-        .to_numpy()\
-        .reshape(-1, 1)
-    # Don't convert NaN to -1, XGBoost will treat NaN as missing value indicator
+    x_age = (
+      df["birthday"]
+      .fillna("")
+      .infer_objects(copy=False)
+      .apply(self.get_age)
+      .to_numpy()
+      .reshape(-1, 1)
+    )
     x = np.hstack([x_emb, x_cate.astype(np.float32), x_age.astype(np.float32)])
     return x.astype(np.float32), scaler, encoders
 
-  def encode_with_frequency(self, df: pd.DataFrame, col: str, encoders: dict[str, LabelEncoder], min_freq=0.01):
+  def encode_with_frequency(
+    self, df: pd.DataFrame, col: str, encoders: dict[str, LabelEncoder], min_freq=0.01
+  ):
     """
     Group rare categories as 'Other' during training.
     Handle unseen categories during prediction by mapping to most frequent category.
@@ -346,80 +413,84 @@ class ModelUtility:
     filled = df[col].fillna("(null)").astype(str)
 
     if col not in encoders:
-        # Training phase: Group rare categories
-        value_counts = filled.value_counts(normalize=True)
-        rare_categories = value_counts[value_counts < min_freq].index
+      # Training phase: Group rare categories
+      value_counts = filled.value_counts(normalize=True)
+      rare_categories = value_counts[value_counts < min_freq].index
 
-        if len(rare_categories) > 0:
-            filled = filled.replace(rare_categories.tolist(), "Other")
-            self.logger.info(
-                "Column '%s': Grouped %d rare categories into 'Other' (min_freq=%.3f)",
-                col, len(rare_categories), min_freq
-            )
-
-        encoders[col] = LabelEncoder()
-        encoders[col].fit(filled)
+      if len(rare_categories) > 0:
+        filled = filled.replace(rare_categories.tolist(), "Other")
         self.logger.info(
-            "Column '%s': Fitted encoder with %d classes",
-            col, len(encoders[col].classes_)
+          "Column '%s': Grouped %d rare categories into 'Other' (min_freq=%.3f)",
+          col,
+          len(rare_categories),
+          min_freq,
         )
+
+      encoders[col] = LabelEncoder()
+      encoders[col].fit(filled)
+      self.logger.info(
+        "Column '%s': Fitted encoder with %d classes", col, len(encoders[col].classes_)
+      )
     else:
-        # Prediction phase: Handle unseen categories
-        known_categories = set(encoders[col].classes_)
-        unseen_mask = ~filled.isin(known_categories)
+      # Prediction phase: Handle unseen categories
+      known_categories = set(encoders[col].classes_)
+      unseen_mask = ~filled.isin(known_categories)
 
-        if unseen_mask.any():
-            unseen_count = unseen_mask.sum()
+      if unseen_mask.any():
+        unseen_count = unseen_mask.sum()
 
-            # Strategy: Map unseen to most frequent class in training data
-            # This is safer than creating "Other" which may not exist
-            most_frequent_class = encoders[col].classes_[0]  # Classes are sorted by frequency
-            filled = filled.copy()
-            filled[unseen_mask] = most_frequent_class
+        # Strategy: Map unseen to most frequent class in training data
+        most_frequent_class = encoders[col].classes_[
+          0
+        ]  # Classes are sorted by frequency
+        filled = filled.copy()
+        filled[unseen_mask] = most_frequent_class
 
-            self.logger.warning(
-                "Column '%s': Found %d unseen categories, mapped to '%s'",
-                col, unseen_count, most_frequent_class
-            )
+        self.logger.warning(
+          "Column '%s': Found %d unseen categories, mapped to '%s'",
+          col,
+          unseen_count,
+          most_frequent_class,
+        )
 
     return encoders[col].transform(filled)
 
   def validate_embedding(self, embedding: list[float]) -> np.ndarray:
     try:
-        arr = np.array(embedding, dtype=np.float32).flatten()
+      arr = np.array(embedding, dtype=np.float32).flatten()
 
-        # Check dimension
-        if len(arr) != self.embedding_dimension:
-            self.logger.warning("Expected %dD embedding, got %dD", self.embedding_dimension, len(arr))
-            # Pad or truncate
-            if len(arr) < self.embedding_dimension:
-                arr = np.pad(arr, (0, self.embedding_dimension - len(arr)))
-            else:
-                arr = arr[:self.embedding_dimension]
+      # Check dimension
+      if len(arr) != self.embedding_dimension:
+        self.logger.warning(
+          "Expected %dD embedding, got %dD", self.embedding_dimension, len(arr)
+        )
+        # Pad or truncate
+        if len(arr) < self.embedding_dimension:
+          arr = np.pad(arr, (0, self.embedding_dimension - len(arr)))
+        else:
+          arr = arr[: self.embedding_dimension]
 
-        # Check for invalid values
-        if np.any(np.isnan(arr)) or np.any(np.isinf(arr)):
-            self.logger.warning("Embedding contains NaN/Inf values")
-            # Use mean embedding instead of zeros
-            return self._get_mean_embedding()  # Store this from training data
+      # Check for invalid values
+      if np.any(np.isnan(arr)) or np.any(np.isinf(arr)):
+        self.logger.warning("Embedding contains NaN/Inf values")
+        # Use mean embedding instead of zeros
+        return self._get_mean_embedding()  # Store this from training data
 
-        # Check if all zeros (likely missing)
-        if np.allclose(arr, 0):
-            self.logger.warning("All-zero embedding detected")
-            return self._get_mean_embedding()
+      # Check if all zeros (likely missing)
+      if np.allclose(arr, 0):
+        self.logger.warning("All-zero embedding detected")
+        return self._get_mean_embedding()
 
     except Exception:
-        self.logger.exception("Failed to validate embedding")
-        return self._get_mean_embedding()
+      self.logger.exception("Failed to validate embedding")
+      return self._get_mean_embedding()
     else:
-        return arr
+      return arr
 
   def _get_mean_embedding(self) -> np.ndarray:
     return np.full((self.embedding_dimension,), 0.01, dtype=np.float32)
 
-  def convert_numpy_types(
-    self, obj: object
-  ) -> Any:
+  def convert_numpy_types(self, obj: object) -> Any:
     """Recursively convert numpy types to Python native types for JSON serialization"""
     if isinstance(obj, dict):
       result = {key: self.convert_numpy_types(value) for key, value in obj.items()}
@@ -438,10 +509,7 @@ class ModelUtility:
     return result
 
   def calculate_test_results(
-    self,
-    y_test: np.ndarray,
-    y_pred: np.ndarray,
-    model: xgb.Booster
+    self, y_test: np.ndarray, y_pred: np.ndarray, model: xgb.Booster
   ) -> dict[str, Any]:
     """
     Calculate comprehensive test results including metrics, predictions stats,
@@ -457,9 +525,12 @@ class ModelUtility:
 
     """
     self.logger.info(
-        "Target value stats - min: %.6f, max: %.6f, mean: %.6f, zeros: %d/%d",
-        y_test.min(), y_test.max(), y_test.mean(),
-        np.sum(y_test == 0), len(y_test)
+      "Target value stats - min: %.6f, max: %.6f, mean: %.6f, zeros: %d/%d",
+      y_test.min(),
+      y_test.max(),
+      y_test.mean(),
+      np.sum(y_test == 0),
+      len(y_test),
     )
 
     epsilon = 1e-10
@@ -471,33 +542,36 @@ class ModelUtility:
 
     # SMAPE calculation (symmetric, handles zeros with epsilon)
     smape = float(
-      np.mean(2.0 * np.abs(y_pred - y_test) / (np.abs(y_test) + np.abs(y_pred) + epsilon)) * 100
+      np.mean(
+        2.0 * np.abs(y_pred - y_test) / (np.abs(y_test) + np.abs(y_pred) + epsilon)
+      )
+      * 100
     )
 
     # Basic metrics
     test_results: dict[str, Any] = {
-        "rmse": float(root_mean_squared_error(y_test, y_pred)),
-        "r2": float(r2_score(y_test, y_pred)),
-        "mae": float(np.mean(np.abs(y_test - y_pred))),
-        "rmsle": rmsle,
-        "smape": smape,
+      "rmse": float(root_mean_squared_error(y_test, y_pred)),
+      "r2": float(r2_score(y_test, y_pred)),
+      "mae": float(np.mean(np.abs(y_test - y_pred))),
+      "rmsle": rmsle,
+      "smape": smape,
     }
 
     # Prediction statistics
     test_results["prediction_stats"] = {
-        "min": float(y_pred.min()),
-        "max": float(y_pred.max()),
-        "mean": float(y_pred.mean()),
-        "std": float(y_pred.std()),
+      "min": float(y_pred.min()),
+      "max": float(y_pred.max()),
+      "mean": float(y_pred.mean()),
+      "std": float(y_pred.std()),
     }
 
     # Residual analysis
     residuals = y_test - y_pred
     test_results["residual_stats"] = {
-        "mean": float(residuals.mean()),  # Should be ~0
-        "std": float(residuals.std()),
-        "bias_low_scores": float(residuals[y_test < y_test.mean()].mean()),
-        "bias_high_scores": float(residuals[y_test >= y_test.mean()].mean()),
+      "mean": float(residuals.mean()),  # Should be ~0
+      "std": float(residuals.std()),
+      "bias_low_scores": float(residuals[y_test < y_test.mean()].mean()),
+      "bias_high_scores": float(residuals[y_test >= y_test.mean()].mean()),
     }
 
     # Feature importance (top 10)

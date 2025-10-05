@@ -107,7 +107,14 @@ class PotentialCustomerScoringModel:
       msg = "Data not loaded. Call load_data first."
       raise ValueError(msg)
 
-    sample_size = min(int(self.dataset_size * 0.5), 5000)
+    sample_size = self.util.get_tuning_sample_size(self.dataset_size)
+    self.logger.info(
+      "Using %d samples (%.1f%%) for hyperparameter tuning from %d total training samples",
+      sample_size,
+      (sample_size / self.dataset_size) * 100,
+      self.dataset_size,
+    )
+
     x_sample = self.X_train[:sample_size]
     y_sample = self.y_train[:sample_size]
     objective = self.util.get_optuna_objective(x_sample, y_sample, self.use_gpu)
@@ -180,7 +187,6 @@ class PotentialCustomerScoringModel:
         return {
           "booster": best_params["booster"],
           "grow_policy": best_params["grow_policy"],
-          "nthread": best_params["nthread"],
           "eta": best_params["eta"],
           "max_depth": best_params["max_depth"],
           "min_child_weight": best_params["min_child_weight"],
