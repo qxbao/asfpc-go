@@ -74,17 +74,25 @@ func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password s
 	logger := lg.GetLogger("FacebookGraph")
 
 	resp, err := c.R().
-		SetQueryParams(data).
 		SetHeader("User-Agent", GetRandomAndroidUA()).
-		SetResult(&atResponse).
 		Get(url)
 
 	if err != nil {
 		return nil, err
 	}
 
+	// Log raw response before parsing
+	bodyStr := resp.String()
+	
+	// Parse response
+	err = json.Unmarshal([]byte(bodyStr), &atResponse)
+	if err != nil {
+		logger.Errorf("Android Token Response parse error - URL: %s, Response: %s, Error: %v", url, bodyStr, err)
+		return nil, fmt.Errorf("(username = %s, token_type = Android) Failed to parse response: %v", username, err)
+	}
+
 	if atResponse.AccessToken == nil {
-		logger.Errorf(fmt.Sprintf("Android Token Response missing access_token - Full response: %s", resp.String()))
+		logger.Errorf("Android Token Response missing access_token - URL: %s, Full response: %s", url, bodyStr)
 		return nil, fmt.Errorf("(username = %s, token_type = Android) Failed to get access token: Cannot find access_token in response", username)
 	}
 
@@ -111,7 +119,6 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 	logger := lg.GetLogger("FacebookGraph")
 
 	resp, err := c.R().
-		SetResult(&atResponse).
 		SetHeader("User-Agent", GetRandomIOSUA()).
 		Get(url)
 
@@ -119,8 +126,18 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 		return nil, err
 	}
 
+	// Log raw response before parsing
+	bodyStr := resp.String()
+	
+	// Parse response
+	err = json.Unmarshal([]byte(bodyStr), &atResponse)
+	if err != nil {
+		logger.Errorf("iOS Token Response parse error - URL: %s, Response: %s, Error: %v", url, bodyStr, err)
+		return nil, fmt.Errorf("(username = %s, token_type = IOS) Failed to parse response: %v", username, err)
+	}
+
 	if atResponse.AccessToken == nil {
-		logger.Errorf(fmt.Sprintf("iOS Token Response missing access_token %s - Full response: %s", url, resp.String()))
+		logger.Errorf("iOS Token Response missing access_token - URL: %s, Full response: %s", url, bodyStr)
 		return nil, fmt.Errorf("(username = %s, token_type = IOS) Failed to get access token: Cannot find access_token in response", username)
 	}
 
