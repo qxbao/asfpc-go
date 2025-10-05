@@ -185,8 +185,6 @@ class PotentialCustomerScoringModel:
         return {}
       try:
         return {
-          "booster": best_params["booster"],
-          "grow_policy": best_params["grow_policy"],
           "eta": best_params["eta"],
           "max_depth": best_params["max_depth"],
           "min_child_weight": best_params["min_child_weight"],
