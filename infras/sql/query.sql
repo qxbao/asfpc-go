@@ -472,7 +472,7 @@ SELECT
   'posts' as data_type
 FROM public.post 
 WHERE created_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', inserted_at)
+GROUP BY DATE_TRUNC('month', created_at)
 UNION ALL
 SELECT 
   DATE_TRUNC('month', inserted_at)::date as date,
@@ -502,4 +502,4 @@ SELECT
   COUNT(*) as count,
   ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
 FROM scored_profiles
-GROUP BY score_range
+GROUP BY score_range;

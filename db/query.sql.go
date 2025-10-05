@@ -1731,29 +1731,25 @@ func (q *Queries) GetRequestById(ctx context.Context, id int32) (Request, error)
 }
 
 const getScoreDistribution = `-- name: GetScoreDistribution :many
-SELECT 
-  CASE 
-    WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
-    WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
-    WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
-    WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
-    WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-    ELSE 'unknown'
-  END as score_range,
+WITH scored_profiles AS (
+  SELECT
+    CASE 
+      WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+      ELSE 'unknown'
+    END as score_range
+  FROM public.user_profile
+  WHERE gemini_score IS NOT NULL
+)
+SELECT
+  score_range,
   COUNT(*) as count,
   ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
-FROM public.user_profile 
-WHERE gemini_score IS NOT NULL
-GROUP BY 
-  CASE 
-    WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
-    WHEN gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
-    WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
-    WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
-    WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-    ELSE 'unknown'
-  END
-ORDER BY score_range
+FROM scored_profiles
+GROUP BY score_range
 `
 
 type GetScoreDistributionRow struct {
