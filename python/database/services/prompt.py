@@ -13,7 +13,7 @@ class PromptService:
   async def get_prompt(self, name: str) -> str | None:
     try:
       async with Database.get_session() as conn:
-        query = select(Prompt).where(Prompt.service_name == name)
+        query = select(Prompt).where(Prompt.service_name == name).order_by(Prompt.version.desc()).limit(1)
         res = await conn.execute(query)
         prompt = res.scalar_one_or_none()
         return prompt.content if prompt else None

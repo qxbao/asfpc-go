@@ -190,7 +190,6 @@ class TaskNavigator:
       my_temp = template
       final_str = prompt_service.inject_prompt(
         my_temp,
-        profile.name,
         profile.location,
         profile.work,
         profile.bio,
