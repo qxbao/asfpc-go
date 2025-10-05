@@ -369,3 +369,40 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 		"data": successCount,
 	})
 }
+
+func (as *AnalysisRoutingService) FindSimilarProfiles(c echo.Context) error {
+	dto := new(infras.FindSimilarProfilesDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(400, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+
+	if dto.TopK == nil {
+		dto.TopK = new(int32)
+		*dto.TopK = 10
+	}
+
+	if dto.ProfileID == nil {
+		return c.JSON(400, map[string]any{
+			"error": "profile_id is required",
+		})
+	}
+
+	similarProfiles, err := as.Server.Queries.FindSimilarProfiles(c.Request().Context(), db.FindSimilarProfilesParams{
+		Pid:      	*dto.ProfileID,
+		Limit:      *dto.TopK,
+	})
+
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "Failed to find similar profiles: " + err.Error(),
+		})
+	}
+
+	logger.GetLogger("ARS").Infof("Found %d similar profiles for profile ID %d", len(similarProfiles), dto.ProfileID)
+
+	return c.JSON(200, map[string]any{
+		"data": similarProfiles,
+	})
+}

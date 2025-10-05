@@ -421,3 +421,22 @@ WHERE id = $1;
 
 -- name: GetRequestById :one
 SELECT * FROM public.request WHERE id = $1;
+
+-- name: GetProfileEmbedding :one
+SELECT embedding FROM public.embedded_profile WHERE pid = $1;
+
+-- name: FindSimilarProfiles :many
+SELECT
+  p.id AS profile_id,
+  p.profile_url as profile_url,
+  p.name AS profile_name,
+  CAST(1 - (ep.embedding <=> (
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+  )) AS DOUBLE PRECISION) AS similarity
+FROM embedded_profile ep
+JOIN user_profile p ON p.id = ep.pid
+WHERE ep.pid != $1
+ORDER BY ep.embedding <=> (
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+  )
+LIMIT $2;

@@ -410,6 +410,63 @@ func (q *Queries) DeleteJunkProfiles(ctx context.Context) (int64, error) {
 	return deleted_count, err
 }
 
+const findSimilarProfiles = `-- name: FindSimilarProfiles :many
+SELECT
+  p.id AS profile_id,
+  p.profile_url as profile_url,
+  p.name AS profile_name,
+  CAST(1 - (ep.embedding <=> (
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+  )) AS DOUBLE PRECISION) AS similarity
+FROM embedded_profile ep
+JOIN user_profile p ON p.id = ep.pid
+WHERE ep.pid != $1
+ORDER BY ep.embedding <=> (
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+  )
+LIMIT $2
+`
+
+type FindSimilarProfilesParams struct {
+	Pid   int32
+	Limit int32
+}
+
+type FindSimilarProfilesRow struct {
+	ProfileID   int32
+	ProfileUrl  string
+	ProfileName sql.NullString
+	Similarity  float64
+}
+
+func (q *Queries) FindSimilarProfiles(ctx context.Context, arg FindSimilarProfilesParams) ([]FindSimilarProfilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, findSimilarProfiles, arg.Pid, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindSimilarProfilesRow
+	for rows.Next() {
+		var i FindSimilarProfilesRow
+		if err := rows.Scan(
+			&i.ProfileID,
+			&i.ProfileUrl,
+			&i.ProfileName,
+			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAccountById = `-- name: GetAccountById :one
 SELECT id, email, username, password, is_block, ua, created_at, updated_at, cookies, access_token, proxy_id FROM public.account WHERE id = $1
 `
@@ -1157,6 +1214,17 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 		&i.AccessToken,
 	)
 	return i, err
+}
+
+const getProfileEmbedding = `-- name: GetProfileEmbedding :one
+SELECT embedding FROM public.embedded_profile WHERE pid = $1
+`
+
+func (q *Queries) GetProfileEmbedding(ctx context.Context, pid int32) (Vector, error) {
+	row := q.db.QueryRowContext(ctx, getProfileEmbedding, pid)
+	var embedding Vector
+	err := row.Scan(&embedding)
+	return embedding, err
 }
 
 const getProfileIDForEmbedding = `-- name: GetProfileIDForEmbedding :many
