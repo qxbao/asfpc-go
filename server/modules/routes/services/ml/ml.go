@@ -55,11 +55,7 @@ func (s *MLRoutingService) Train(c echo.Context) error {
 }
 
 func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO) {
-	pythonService := python.PythonService{
-		EnvName: os.Getenv("PYTHON_ENV_NAME"),
-		Log:     true,
-		Silent:  true,
-	}
+	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), true, true, nil)
 	autoTune := "False"
 
 	if *dto.AutoTune {

@@ -260,11 +260,7 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 		return
 	}
 
-	pythonService := python.PythonService{
-		EnvName: os.Getenv("PYTHON_ENV_NAME"),
-		Log:     false,
-		Silent:  true,
-	}
+	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
 	idStrs := make([]string, 0, len(profiles))
 	for _, profileId := range profiles {
 		idStrs = append(idStrs, fmt.Sprintf("%d", profileId))

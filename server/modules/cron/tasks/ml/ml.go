@@ -59,10 +59,7 @@ func (s *MLService) ScoreProfilesCronjob() {
 
 	logger.Info(fmt.Sprintf("Scoring %d profiles using model %s", len(profiles), modelName))
 
-	pythonService := python.PythonService{
-		EnvName: os.Getenv("PYTHON_ENV_NAME"),
-		Log:     false,
-	}
+	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
 
 	res, err := pythonService.RunScript("--task=predict",
 		fmt.Sprintf("--targets=%s", profileIDsStr),

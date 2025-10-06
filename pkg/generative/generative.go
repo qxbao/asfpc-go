@@ -44,6 +44,7 @@ func (gs *GenerativeService) GenerateText(prompt string) (string, error) {
 
 	return response.Text(), nil
 }
+
 // @Deprecated
 // func (gs *GenerativeService) GenerateEmbedding(content string) ([]float32, error) {
 // 	var outputDimensionality int32 = 1024
