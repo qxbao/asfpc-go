@@ -47,7 +47,7 @@ func (fg FacebookGraph) signCreator(data map[string]string) map[string]string {
 	return data
 }
 
-func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password string) (*string, error) {
+func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password string, newClient func() *resty.Client) (*string, error) {
 	data := map[string]string{
 		"api_key":                  APIKeyAndroid,
 		"email":                    username,
@@ -67,7 +67,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password s
 		values.Set(key, value)
 	}
 	url := fmt.Sprintf("%s?%s", BaseURLAndroid, values.Encode())
-	c := resty.New()
+	c := newClient()
 	defer c.Close()
 
 	var atResponse AccessTokenResponse
@@ -99,7 +99,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenAndroid(username string, password s
 	return atResponse.AccessToken, nil
 }
 
-func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password string) (*string, error) {
+func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password string, newClient func() *resty.Client) (*string, error) {
 	data := map[string]string{
 		"access_token": APIKeyIOS,
 		"email":        username,
@@ -112,7 +112,7 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 		values.Set(key, value)
 	}
 	url := fmt.Sprintf("%s?%s", BaseURLIOS, values.Encode())
-	c := resty.New()
+	c := newClient()
 	defer c.Close()
 
 	var atResponse AccessTokenResponse
@@ -144,8 +144,8 @@ func (fg FacebookGraph) GenerateFBAccessTokenIOS(username string, password strin
 	return atResponse.AccessToken, nil
 }
 
-func graphQuery[T any](path string, kwargs *map[string]string) (T, error) {
-	c := resty.New()
+func graphQuery[T any](path string, kwargs *map[string]string, newClient func() *resty.Client) (T, error) {
+	c := newClient()
 	defer c.Close()
 
 	var response T
@@ -176,17 +176,17 @@ func graphQuery[T any](path string, kwargs *map[string]string) (T, error) {
 	return response, nil
 }
 
-func (fg FacebookGraph) GetGroupFeed(groupId *string, kwargs *map[string]string) (infras.GetGroupPostsResponse, error) {
+func (fg FacebookGraph) GetGroupFeed(groupId *string, kwargs *map[string]string, newClient func() *resty.Client) (infras.GetGroupPostsResponse, error) {
 	if fg.AccessToken == "" {
 		return infras.GetGroupPostsResponse{}, fmt.Errorf("this account does not have an access token")
 	}
 
 	path := fmt.Sprintf("%s/feed", *groupId)
 	(*kwargs)["access_token"] = fg.AccessToken
-	return graphQuery[infras.GetGroupPostsResponse](path, kwargs)
+	return graphQuery[infras.GetGroupPostsResponse](path, kwargs, newClient)
 }
 
-func (fg FacebookGraph) GetUserDetails(userId string, kwargs *map[string]string) (infras.UserProfile, error) {
+func (fg FacebookGraph) GetUserDetails(userId string, kwargs *map[string]string, newClient func() *resty.Client) (infras.UserProfile, error) {
 	(*kwargs)["access_token"] = fg.AccessToken
-	return graphQuery[infras.UserProfile](userId, kwargs)
+	return graphQuery[infras.UserProfile](userId, kwargs, newClient)
 }

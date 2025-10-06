@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/pkg/utils/client"
 	"github.com/qxbao/asfpc/pkg/utils/facebook"
 	"github.com/qxbao/asfpc/pkg/utils/python"
 )
@@ -221,9 +222,9 @@ func (s *AccountRoutingService) GenAccountsAT(c echo.Context) error {
 			if username == "" {
 				username = account.Username
 			}
-			at, err := fg.GenerateFBAccessTokenAndroid(username, account.Password)
+			at, err := fg.GenerateFBAccessTokenAndroid(username, account.Password, client.NewRestyClient)
 			if err != nil {
-				at, err = fg.GenerateFBAccessTokenIOS(username, account.Password)
+				at, err = fg.GenerateFBAccessTokenIOS(username, account.Password, client.NewRestyClient)
 				if err != nil {
 					errChan <- fmt.Errorf("account ID %d: failed to generate access token: %w", accountId, err)
 					errorIds <- accountId

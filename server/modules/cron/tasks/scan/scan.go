@@ -13,6 +13,7 @@ import (
 	"github.com/qxbao/asfpc/pkg/async"
 	lg "github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils"
+	"github.com/qxbao/asfpc/pkg/utils/client"
 	"github.com/qxbao/asfpc/pkg/utils/facebook"
 )
 
@@ -171,7 +172,7 @@ func (s ScanService) processPosts(input processPostsInput) PostScanResult {
 	posts, err := fg.GetGroupFeed(&input.Group.GroupID, &map[string]string{
 		"limit": fmt.Sprintf("%d", feedLimit),
 		"order": "chronological",
-	})
+	}, client.NewRestyClient)
 
 	if err != nil {
 		panic(fmt.Errorf("failed to fetch group feed: %s", err.Error()))
@@ -388,7 +389,7 @@ func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesT
 	fg := facebook.FacebookGraph{
 		AccessToken: profile.AccessToken.String,
 	}
-	fetchedProfile, err := fg.GetUserDetails(profile.FacebookID, &map[string]string{})
+	fetchedProfile, err := fg.GetUserDetails(profile.FacebookID, &map[string]string{}, client.NewRestyClient)
 
 	if err != nil {
 		s.Server.Queries.UpdateProfileScanStatus(ctx, profile.ID)
