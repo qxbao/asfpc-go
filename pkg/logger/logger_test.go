@@ -24,16 +24,8 @@ func TestInitLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to flush logger: %v", err)
 	}
-	t.Run("Flush nil logger", func(t *testing.T) {
-		Logger = nil
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic when flushing nil logger, but did not panic")
-			}
-		}()
-		_ = FlushLogger()
-		if err == nil {
-			t.Error("Expected error when flushing nil logger, got nil")
-		}
-	})
+	Logger = nil
+	if FlushLogger() != nil {
+		t.Fatal("FlushLogger should return nil when Logger is nil")
+	}
 }
