@@ -1,6 +1,3 @@
-//go:build integration
-// +build integration
-
 package python
 
 import (
@@ -11,8 +8,8 @@ import (
 
 // This test requires the python virtual environment to be set up with the test task.
 func TestRunScript(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+	if testing.Short() || testing.Verbose() {
+		t.Skip("Skipping integration test in short or verbose mode")
 	}
 	expectedOutput := "Test task executed\r\n"
 	_, filename, _, _ := runtime.Caller(0)
