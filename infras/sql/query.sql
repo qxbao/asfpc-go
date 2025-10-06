@@ -458,17 +458,12 @@ SELECT
   (SELECT COUNT(*) FROM public.account WHERE is_block = true) AS blocked_accounts;
 
 -- name: GetTimeSeriesData :many
-WITH daily_profiles AS (
-  SELECT 
-    DATE_TRUNC('day', updated_at)::date as date
-  FROM public.user_profile 
-  WHERE updated_at >= NOW() - INTERVAL '6 months'
-)
 SELECT 
-  date,
+  DATE_TRUNC('day', updated_at)::date as date,
   COUNT(*) as count
-FROM daily_profiles
-GROUP BY date
+FROM public.user_profile 
+WHERE updated_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('day', updated_at)
 ORDER BY date;
 
 -- name: GetScoreDistribution :many
