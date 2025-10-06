@@ -96,6 +96,9 @@ class MainProcess:
     elif task == "embed":
       await task_navigator.embed_profiles()
       sys.exit(0)
+    elif task == "test":
+      print("Test task executed") # noqa: T201
+      sys.exit(0)
     else:
       self.logger.error("Unknown task: %s", task)
       sys.exit(1)

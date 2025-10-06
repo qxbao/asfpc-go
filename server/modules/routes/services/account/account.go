@@ -275,10 +275,7 @@ func (s *AccountRoutingService) LoginAccount(c echo.Context) error {
 			"error": "Invalid request body",
 		})
 	}
-	pythonService := python.PythonService{
-		EnvName: os.Getenv("PYTHON_ENV_NAME"),
-		Log:     false,
-	}
+	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
 	res, err := pythonService.RunScript("--task=login", fmt.Sprintf("--uid=%d", dto.UID))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]any{
@@ -297,10 +294,7 @@ func (s *AccountRoutingService) JoinGroup(c echo.Context) error {
 			"error": "Invalid request body",
 		})
 	}
-	pythonService := python.PythonService{
-		EnvName: os.Getenv("PYTHON_ENV_NAME"),
-		Log:     false,
-	}
+	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, false, nil)
 	res, err := pythonService.RunScript("--task=joingroup", fmt.Sprintf("--group_id=%d", dto.GID))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]any{

@@ -40,8 +40,5 @@ func GetLogger(loggerName string) *zap.SugaredLogger {
 }
 
 func FlushLogger() error {
-	if Logger != nil {
-		return Logger.Sync()
-	}
-	return nil
+	return Logger.Sync()
 }

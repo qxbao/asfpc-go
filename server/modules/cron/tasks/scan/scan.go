@@ -12,7 +12,7 @@ import (
 	"github.com/qxbao/asfpc/infras"
 	"github.com/qxbao/asfpc/pkg/async"
 	lg "github.com/qxbao/asfpc/pkg/logger"
-	"github.com/qxbao/asfpc/pkg/utils"
+	db_utils "github.com/qxbao/asfpc/pkg/utils/db"
 	"github.com/qxbao/asfpc/pkg/utils/client"
 	"github.com/qxbao/asfpc/pkg/utils/facebook"
 )
@@ -291,7 +291,7 @@ func (s ScanService) processComment(input processCommentInput) bool {
 
 	profile, err := s.Server.Queries.CreateProfile(input.Context, db.CreateProfileParams{
 		FacebookID:  input.Comment.From.ID.String(),
-		Name:        utils.ToNullString(input.Comment.From.Name),
+		Name:        db_utils.ToNullString(input.Comment.From.Name),
 		ScrapedByID: input.ScraperId,
 	})
 	if err != nil {
@@ -311,7 +311,7 @@ func (s ScanService) processComment(input processCommentInput) bool {
 	_, err = s.Server.Queries.CreateComment(input.Context, db.CreateCommentParams{
 		CommentID: commentID[len(commentID)-1],
 		PostID:    input.PostID,
-		Content:   utils.GetStringOrDefault(input.Comment.Message, ""),
+		Content:   db_utils.GetStringOrDefault(input.Comment.Message, ""),
 		AuthorID:  profile.ID,
 		CreatedAt: parsedTime,
 	})
@@ -398,17 +398,17 @@ func (s ScanService) processProfile(ctx context.Context, profile db.GetProfilesT
 
 	params := db.UpdateProfileAfterScanParams{
 		ID:                 profile.ID,
-		Bio:                utils.ToNullString(fetchedProfile.About),
-		Email:              utils.ToNullString(fetchedProfile.Email),
-		Location:           utils.ExtractEntityName(fetchedProfile.Location),
-		Hometown:           utils.ExtractEntityName(fetchedProfile.Hometown),
-		Birthday:           utils.ToNullString(fetchedProfile.Birthday),
-		Gender:             utils.ToNullString(fetchedProfile.Gender),
-		RelationshipStatus: utils.ToNullString(fetchedProfile.RelationshipStatus),
-		Work:               utils.JoinWork(fetchedProfile.Work),
-		Education:          utils.JoinEducation(fetchedProfile.Education),
-		ProfileUrl:         utils.GetStringOrDefault(fetchedProfile.Link, ""),
-		Locale:             utils.GetStringOrDefault(fetchedProfile.Locale, "en_US"),
+		Bio:                db_utils.ToNullString(fetchedProfile.About),
+		Email:              db_utils.ToNullString(fetchedProfile.Email),
+		Location:           db_utils.ExtractEntityName(fetchedProfile.Location),
+		Hometown:           db_utils.ExtractEntityName(fetchedProfile.Hometown),
+		Birthday:           db_utils.ToNullString(fetchedProfile.Birthday),
+		Gender:             db_utils.ToNullString(fetchedProfile.Gender),
+		RelationshipStatus: db_utils.ToNullString(fetchedProfile.RelationshipStatus),
+		Work:               db_utils.JoinWork(fetchedProfile.Work),
+		Education:          db_utils.JoinEducation(fetchedProfile.Education),
+		ProfileUrl:         db_utils.GetStringOrDefault(fetchedProfile.Link, ""),
+		Locale:             db_utils.GetStringOrDefault(fetchedProfile.Locale, "en_US"),
 		Phone:              sql.NullString{Valid: false},
 	}
 

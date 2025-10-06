@@ -15,15 +15,28 @@ type PythonService struct {
 	EnvName string
 	Log      bool
 	Silent   bool
+	PythonPath string
+}
+
+func NewPythonService(envName string, log, silent bool, pythonPath *string) *PythonService {
+	if pythonPath == nil {
+		pythonPath = &PythonPath
+	}
+	return &PythonService{
+		EnvName:  envName,
+		Log:      log,
+		Silent:   silent,
+		PythonPath: *pythonPath,
+	}
 }
 
 func (ps PythonService) RunScript(args ...string) (string, error) {
 	var pythonExe string
 
 	if runtime.GOOS == "windows" {
-		pythonExe = filepath.Join("venv", "Scripts", "python.exe")
+		pythonExe = filepath.Join(ps.PythonPath, "venv", "Scripts", "python.exe")
 	} else {
-		pythonExe = filepath.Join("venv", "bin", "python")
+		pythonExe = filepath.Join(ps.PythonPath, "venv", "bin", "python")
 	}
 
 	if ps.Silent {
@@ -37,7 +50,7 @@ func (ps PythonService) RunScript(args ...string) (string, error) {
 	cmdArgs := append([]string{"main.py"}, args...)
 
 	cmd := exec.Command(pythonExe, cmdArgs...)
-	cmd.Dir = PythonPath
+	cmd.Dir = ps.PythonPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
