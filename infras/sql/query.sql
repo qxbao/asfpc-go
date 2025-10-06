@@ -459,29 +459,12 @@ SELECT
 
 -- name: GetTimeSeriesData :many
 SELECT 
-  DATE_TRUNC('month', created_at)::date as date,
-  COUNT(*) as count,
-  'profiles' as data_type
+  DATE_TRUNC('day', updated_at)::date as date,
+  COUNT(*) as count
 FROM public.user_profile 
-WHERE created_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', created_at)
-UNION ALL
-SELECT 
-  DATE_TRUNC('month', created_at)::date as date,
-  COUNT(*) as count,
-  'posts' as data_type
-FROM public.post 
-WHERE created_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', created_at)
-UNION ALL
-SELECT 
-  DATE_TRUNC('month', inserted_at)::date as date,
-  COUNT(*) as count,
-  'comments' as data_type
-FROM public.comment 
-WHERE inserted_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', inserted_at)
-ORDER BY date, data_type;
+WHERE updated_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('day', updated_at)
+ORDER BY date;
 
 -- name: GetScoreDistribution :many
 WITH scored_profiles AS (

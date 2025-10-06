@@ -1803,35 +1803,17 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 
 const getTimeSeriesData = `-- name: GetTimeSeriesData :many
 SELECT 
-  DATE_TRUNC('month', created_at)::date as date,
-  COUNT(*) as count,
-  'profiles' as data_type
+  DATE_TRUNC('day', updated_at)::date as date,
+  COUNT(*) as count
 FROM public.user_profile 
-WHERE created_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', created_at)
-UNION ALL
-SELECT 
-  DATE_TRUNC('month', created_at)::date as date,
-  COUNT(*) as count,
-  'posts' as data_type
-FROM public.post 
-WHERE created_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', created_at)
-UNION ALL
-SELECT 
-  DATE_TRUNC('month', inserted_at)::date as date,
-  COUNT(*) as count,
-  'comments' as data_type
-FROM public.comment 
-WHERE inserted_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', inserted_at)
-ORDER BY date, data_type
+WHERE updated_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('day', updated_at)
+ORDER BY date
 `
 
 type GetTimeSeriesDataRow struct {
-	Date     time.Time
-	Count    int64
-	DataType string
+	Date  time.Time
+	Count int64
 }
 
 func (q *Queries) GetTimeSeriesData(ctx context.Context) ([]GetTimeSeriesDataRow, error) {
@@ -1843,7 +1825,7 @@ func (q *Queries) GetTimeSeriesData(ctx context.Context) ([]GetTimeSeriesDataRow
 	var items []GetTimeSeriesDataRow
 	for rows.Next() {
 		var i GetTimeSeriesDataRow
-		if err := rows.Scan(&i.Date, &i.Count, &i.DataType); err != nil {
+		if err := rows.Scan(&i.Date, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
