@@ -1803,13 +1803,12 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 
 const getTimeSeriesData = `-- name: GetTimeSeriesData :many
 SELECT 
-  DATE_TRUNC('month', updated_at)::date as date,
+  DATE_TRUNC('day', updated_at)::date as date,
   COUNT(*) as count,
-  'scanned_profiles' as data_type
+  'profiles' as data_type
 FROM public.user_profile 
-WHERE is_scanned = true 
-  AND updated_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('month', updated_at)
+WHERE updated_at >= NOW() - INTERVAL '6 months'
+GROUP BY DATE_TRUNC('day', updated_at)
 ORDER BY date
 `
 
