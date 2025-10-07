@@ -197,9 +197,15 @@ func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 	})
 }
 
+type Data struct {
+	Range       string  `json:"range"`
+	GeminiScore float64 `json:"gemini_score"`
+	ModelScore  float64 `json:"model_score"`
+}
+
 func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 	queries := ds.Server.Queries
-	data, err := queries.GetScoreDistribution(c.Request().Context())
+	scoreDistribution, err := queries.GetScoreDistribution(c.Request().Context())
 
 	if err != nil {
 		return c.JSON(500, map[string]any{
@@ -207,8 +213,18 @@ func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 		})
 	}
 
-	if data == nil {
-		data = make([]db.GetScoreDistributionRow, 0)
+	if scoreDistribution == nil {
+		scoreDistribution = make([]db.GetScoreDistributionRow, 0)
+	}
+
+	// Map từ kết quả query
+	data := make([]Data, 0)
+	for _, row := range scoreDistribution {
+		data = append(data, Data{
+			Range:       row.ScoreRange,
+			GeminiScore: float64(row.GeminiCount),
+			ModelScore:  float64(row.ModelCount),
+		})
 	}
 
 	return c.JSON(200, map[string]any{

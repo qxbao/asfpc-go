@@ -1731,7 +1731,14 @@ func (q *Queries) GetRequestById(ctx context.Context, id int32) (Request, error)
 }
 
 const getScoreDistribution = `-- name: GetScoreDistribution :many
-WITH scored_profiles AS (
+WITH score_ranges AS (
+  SELECT '0.0-0.2' as range UNION ALL
+  SELECT '0.2-0.4' UNION ALL
+  SELECT '0.4-0.6' UNION ALL
+  SELECT '0.6-0.8' UNION ALL
+  SELECT '0.8-1.0'
+),
+gemini_counts AS (
   SELECT
     CASE 
       WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
@@ -1739,23 +1746,40 @@ WITH scored_profiles AS (
       WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
       WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
       WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-      ELSE 'unknown'
-    END as score_range
+    END as score_range,
+    COUNT(*) as gemini_count
   FROM public.user_profile
   WHERE gemini_score IS NOT NULL
+  GROUP BY score_range
+),
+model_counts AS (
+  SELECT
+    CASE 
+      WHEN model_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN model_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN model_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN model_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    END as score_range,
+    COUNT(*) as model_count
+  FROM public.user_profile
+  WHERE model_score IS NOT NULL
+  GROUP BY score_range
 )
-SELECT
-  score_range,
-  COUNT(*) as count,
-  ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
-FROM scored_profiles
-GROUP BY score_range
+SELECT 
+  sr.range as score_range,
+  COALESCE(gc.gemini_count, 0) as gemini_count,
+  COALESCE(mc.model_count, 0) as model_count
+FROM score_ranges sr
+LEFT JOIN gemini_counts gc ON sr.range = gc.score_range
+LEFT JOIN model_counts mc ON sr.range = mc.score_range
+ORDER BY sr.range
 `
 
 type GetScoreDistributionRow struct {
-	ScoreRange string
-	Count      int64
-	Percentage string
+	ScoreRange  string
+	GeminiCount int64
+	ModelCount  int64
 }
 
 func (q *Queries) GetScoreDistribution(ctx context.Context) ([]GetScoreDistributionRow, error) {
@@ -1767,7 +1791,7 @@ func (q *Queries) GetScoreDistribution(ctx context.Context) ([]GetScoreDistribut
 	var items []GetScoreDistributionRow
 	for rows.Next() {
 		var i GetScoreDistributionRow
-		if err := rows.Scan(&i.ScoreRange, &i.Count, &i.Percentage); err != nil {
+		if err := rows.Scan(&i.ScoreRange, &i.GeminiCount, &i.ModelCount); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
