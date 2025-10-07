@@ -467,7 +467,14 @@ GROUP BY DATE_TRUNC('day', updated_at)
 ORDER BY date;
 
 -- name: GetScoreDistribution :many
-WITH scored_profiles AS (
+WITH score_ranges AS (
+  SELECT '0.0-0.2' as range UNION ALL
+  SELECT '0.2-0.4' UNION ALL
+  SELECT '0.4-0.6' UNION ALL
+  SELECT '0.6-0.8' UNION ALL
+  SELECT '0.8-1.0'
+),
+gemini_counts AS (
   SELECT
     CASE 
       WHEN gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
@@ -475,12 +482,13 @@ WITH scored_profiles AS (
       WHEN gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
       WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
       WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-      ELSE 'unknown'
     END as score_range,
-    'gemini_score' as score_type
+    COUNT(*) as gemini_count
   FROM public.user_profile
   WHERE gemini_score IS NOT NULL
-  UNION ALL
+  GROUP BY score_range
+),
+model_counts AS (
   SELECT
     CASE 
       WHEN model_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
@@ -488,17 +496,17 @@ WITH scored_profiles AS (
       WHEN model_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
       WHEN model_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
       WHEN model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
-      ELSE 'unknown'
     END as score_range,
-    'model_score' as score_type
+    COUNT(*) as model_count
   FROM public.user_profile
   WHERE model_score IS NOT NULL
+  GROUP BY score_range
 )
-SELECT
-  score_range,
-  score_type,
-  COUNT(*) as count,
-  ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY score_type)), 1) as percentage
-FROM scored_profiles
-GROUP BY score_range, score_type
-ORDER BY score_type, score_range;
+SELECT 
+  sr.range as score_range,
+  COALESCE(gc.gemini_count, 0) as gemini_count,
+  COALESCE(mc.model_count, 0) as model_count
+FROM score_ranges sr
+LEFT JOIN gemini_counts gc ON sr.range = gc.score_range
+LEFT JOIN model_counts mc ON sr.range = mc.score_range
+ORDER BY sr.range;
