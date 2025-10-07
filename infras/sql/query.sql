@@ -476,13 +476,29 @@ WITH scored_profiles AS (
       WHEN gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
       WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
       ELSE 'unknown'
-    END as score_range
+    END as score_range,
+    'gemini_score' as score_type
   FROM public.user_profile
   WHERE gemini_score IS NOT NULL
+  UNION ALL
+  SELECT
+    CASE 
+      WHEN model_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN model_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN model_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN model_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+      ELSE 'unknown'
+    END as score_range,
+    'model_score' as score_type
+  FROM public.user_profile
+  WHERE model_score IS NOT NULL
 )
 SELECT
   score_range,
+  score_type,
   COUNT(*) as count,
-  ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM public.user_profile WHERE gemini_score IS NOT NULL)), 1) as percentage
+  ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY score_type)), 1) as percentage
 FROM scored_profiles
-GROUP BY score_range;
+GROUP BY score_range, score_type
+ORDER BY score_type, score_range;
