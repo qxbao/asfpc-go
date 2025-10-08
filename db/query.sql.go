@@ -917,7 +917,7 @@ const getGroupsToScan = `-- name: GetGroupsToScan :many
 SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.is_joined = true AND g.account_id = $1
-ORDER BY scanned_at ASC NULLS LAST LIMIT $2
+ORDER BY scanned_at ASC NULLS FIRST LIMIT $2
 `
 
 type GetGroupsToScanParams struct {

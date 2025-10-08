@@ -75,7 +75,7 @@ WHERE g.id = $1;
 SELECT g.*, a.access_token FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.is_joined = true AND g.account_id = $1
-ORDER BY scanned_at ASC NULLS LAST LIMIT $2;
+ORDER BY scanned_at ASC NULLS FIRST LIMIT $2;
 
 -- name: UpdateGroupScannedAt :exec
 UPDATE public."group"
