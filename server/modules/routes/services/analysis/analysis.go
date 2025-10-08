@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"encoding/csv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
@@ -13,6 +14,9 @@ import (
 	"github.com/qxbao/asfpc/pkg/generative"
 	"github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils/prompt"
+
+	"github.com/xuri/excelize/v2"
+	"github.com/phpdave11/gofpdf"
 )
 
 
@@ -270,15 +274,83 @@ func (as *AnalysisRoutingService) ExportProfiles(c echo.Context) error {
 		profiles = make([]db.GetProfilesForExportRow, 0)
 	}
 
-	c.Response().Header().Set(echo.HeaderContentType, "application/json")
-	c.Response().Header().Set(
-		echo.HeaderContentDisposition,
-		"attachment; filename=data.json",
-	)
-
-	enc := json.NewEncoder(c.Response().Writer)
-	c.Response().WriteHeader(http.StatusOK)
-	return enc.Encode(profiles)
+	format := c.QueryParam("format")
+	switch format {
+	case "excel":
+		// Excel export
+		// github.com/xuri/excelize/v2
+		importExcelize := func() error {
+			f := excelize.NewFile()
+			sheet := "Sheet1"
+			f.NewSheet(sheet)
+			// Header
+			headers := []string{"FacebookID", "Name", "Bio", "Location", "Work", "Education", "RelationshipStatus", "CreatedAt", "UpdatedAt", "IsScanned", "Hometown", "Locale", "Gender", "Birthday", "Email", "Phone", "ProfileUrl", "IsAnalyzed", "GeminiScore"}
+			for i, h := range headers {
+				cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+				f.SetCellValue(sheet, cell, h)
+			}
+			// Data
+			for r, p := range profiles {
+				vals := []any{p.FacebookID, p.Name, p.Bio, p.Location, p.Work, p.Education, p.RelationshipStatus, p.CreatedAt, p.UpdatedAt, p.IsScanned, p.Hometown, p.Locale, p.Gender, p.Birthday, p.Email, p.Phone, p.ProfileUrl, p.IsAnalyzed, p.GeminiScore}
+				for c, v := range vals {
+					cell, _ := excelize.CoordinatesToCellName(c+1, r+2)
+					f.SetCellValue(sheet, cell, v)
+				}
+			}
+			c.Response().Header().Set(echo.HeaderContentType, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+			c.Response().Header().Set(echo.HeaderContentDisposition, "attachment; filename=data.xlsx")
+			c.Response().WriteHeader(http.StatusOK)
+			return f.Write(c.Response().Writer)
+		}
+		return importExcelize()
+	case "csv":
+		// CSV export
+		c.Response().Header().Set(echo.HeaderContentType, "text/csv")
+		c.Response().Header().Set(echo.HeaderContentDisposition, "attachment; filename=data.csv")
+		c.Response().WriteHeader(http.StatusOK)
+		w := csv.NewWriter(c.Response().Writer)
+		headers := []string{"FacebookID", "Name", "Bio", "Location", "Work", "Education", "RelationshipStatus", "CreatedAt", "UpdatedAt", "IsScanned", "Hometown", "Locale", "Gender", "Birthday", "Email", "Phone", "ProfileUrl", "IsAnalyzed", "GeminiScore"}
+		w.Write(headers)
+		for _, p := range profiles {
+			vals := []string{
+				fmt.Sprint(p.FacebookID), fmt.Sprint(p.Name), fmt.Sprint(p.Bio), fmt.Sprint(p.Location), fmt.Sprint(p.Work), fmt.Sprint(p.Education), fmt.Sprint(p.RelationshipStatus), fmt.Sprint(p.CreatedAt), fmt.Sprint(p.UpdatedAt), fmt.Sprint(p.IsScanned), fmt.Sprint(p.Hometown), fmt.Sprint(p.Locale), fmt.Sprint(p.Gender), fmt.Sprint(p.Birthday), fmt.Sprint(p.Email), fmt.Sprint(p.Phone), fmt.Sprint(p.ProfileUrl), fmt.Sprint(p.IsAnalyzed), fmt.Sprint(p.GeminiScore),
+			}
+			w.Write(vals)
+		}
+		w.Flush()
+		return nil
+	case "pdf":
+		// PDF export
+		pdf := gofpdf.New("P", "mm", "A4", "")
+		pdf.AddPage()
+		pdf.SetFont("Arial", "B", 12)
+		headers := []string{"FacebookID", "Name", "Bio", "Location", "Work", "Education", "RelationshipStatus", "CreatedAt", "UpdatedAt", "IsScanned", "Hometown", "Locale", "Gender", "Birthday", "Email", "Phone", "ProfileUrl", "IsAnalyzed", "GeminiScore"}
+		for _, h := range headers {
+			pdf.CellFormat(20, 10, h, "1", 0, "C", false, 0, "")
+		}
+		pdf.Ln(-1)
+		pdf.SetFont("Arial", "", 10)
+		for _, p := range profiles {
+			vals := []string{
+				fmt.Sprint(p.FacebookID), fmt.Sprint(p.Name), fmt.Sprint(p.Bio), fmt.Sprint(p.Location), fmt.Sprint(p.Work), fmt.Sprint(p.Education), fmt.Sprint(p.RelationshipStatus), fmt.Sprint(p.CreatedAt), fmt.Sprint(p.UpdatedAt), fmt.Sprint(p.IsScanned), fmt.Sprint(p.Hometown), fmt.Sprint(p.Locale), fmt.Sprint(p.Gender), fmt.Sprint(p.Birthday), fmt.Sprint(p.Email), fmt.Sprint(p.Phone), fmt.Sprint(p.ProfileUrl), fmt.Sprint(p.IsAnalyzed), fmt.Sprint(p.GeminiScore),
+			}
+			for _, v := range vals {
+				pdf.CellFormat(20, 10, v, "1", 0, "C", false, 0, "")
+			}
+			pdf.Ln(-1)
+		}
+		c.Response().Header().Set(echo.HeaderContentType, "application/pdf")
+		c.Response().Header().Set(echo.HeaderContentDisposition, "attachment; filename=data.pdf")
+		c.Response().WriteHeader(http.StatusOK)
+		return pdf.Output(c.Response().Writer)
+	default:
+		// JSON export (mặc định)
+		c.Response().Header().Set(echo.HeaderContentType, "application/json")
+		c.Response().Header().Set(echo.HeaderContentDisposition, "attachment; filename=data.json")
+		enc := json.NewEncoder(c.Response().Writer)
+		c.Response().WriteHeader(http.StatusOK)
+		return enc.Encode(profiles)
+	}
 }
 
 func (as *AnalysisRoutingService) GetGeminiKeys(c echo.Context) error {
