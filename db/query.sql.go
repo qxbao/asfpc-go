@@ -107,6 +107,8 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 const createComment = `-- name: CreateComment :one
 INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id, is_analyzed, inserted_at)
 VALUES ($1, $2, $3, $4, $5, false, NOW())
+ON CONFLICT (comment_id) DO UPDATE SET
+    id = EXCLUDED.id
 RETURNING id, content, is_analyzed, created_at, inserted_at, post_id, author_id, comment_id
 `
 
@@ -210,6 +212,8 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 const createPost = `-- name: CreatePost :one
 INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
 VALUES ($1, $2, $3, NOW(), $4, true)
+ON CONFLICT (post_id) DO UPDATE SET
+    id = EXCLUDED.id
 RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed
 `
 
@@ -243,6 +247,8 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 const createProfile = `-- name: CreateProfile :one
 INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, updated_at)
 VALUES ($1, $2, $3, NOW(), NOW())
+ON CONFLICT (facebook_id) DO UPDATE SET
+    id = EXCLUDED.id
 RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
 `
 

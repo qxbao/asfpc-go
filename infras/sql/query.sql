@@ -85,6 +85,8 @@ WHERE id = $1;
 -- name: CreatePost :one
 INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
 VALUES ($1, $2, $3, NOW(), $4, true)
+ON CONFLICT (post_id) DO UPDATE SET
+    id = EXCLUDED.id
 RETURNING *;
 
 -- name: GetPostsToScan :many
@@ -106,6 +108,8 @@ WHERE p.id = $1;
 -- name: CreateComment :one
 INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id, is_analyzed, inserted_at)
 VALUES ($1, $2, $3, $4, $5, false, NOW())
+ON CONFLICT (comment_id) DO UPDATE SET
+    id = EXCLUDED.id
 RETURNING *;
 
 -- name: GetCommentsToScan :many
@@ -119,6 +123,8 @@ ORDER BY c.inserted_at ASC LIMIT $2;
 -- name: CreateProfile :one
 INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, updated_at)
 VALUES ($1, $2, $3, NOW(), NOW())
+ON CONFLICT (facebook_id) DO UPDATE SET
+    id = EXCLUDED.id
 RETURNING *;
 
 -- name: GetProfileById :one
