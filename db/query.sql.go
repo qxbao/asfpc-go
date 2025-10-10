@@ -13,6 +13,38 @@ import (
 	"github.com/lib/pq"
 )
 
+const addGroupCategory = `-- name: AddGroupCategory :exec
+INSERT INTO public.group_category (group_id, category_id)
+VALUES ($1, $2)
+ON CONFLICT (group_id, category_id) DO NOTHING
+`
+
+type AddGroupCategoryParams struct {
+	GroupID    int32 `json:"group_id"`
+	CategoryID int32 `json:"category_id"`
+}
+
+func (q *Queries) AddGroupCategory(ctx context.Context, arg AddGroupCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, addGroupCategory, arg.GroupID, arg.CategoryID)
+	return err
+}
+
+const addUserProfileCategory = `-- name: AddUserProfileCategory :exec
+INSERT INTO public.user_profile_category (user_profile_id, category_id)
+VALUES ($1, $2)
+ON CONFLICT (user_profile_id, category_id) DO NOTHING
+`
+
+type AddUserProfileCategoryParams struct {
+	UserProfileID int32 `json:"user_profile_id"`
+	CategoryID    int32 `json:"category_id"`
+}
+
+func (q *Queries) AddUserProfileCategory(ctx context.Context, arg AddUserProfileCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, addUserProfileCategory, arg.UserProfileID, arg.CategoryID)
+	return err
+}
+
 const countGeminiKeys = `-- name: CountGeminiKeys :one
 SELECT COUNT(*) as total_gemini_keys FROM public.gemini_key
 `
@@ -64,15 +96,15 @@ RETURNING id, email, username, password, is_block, ua, created_at, updated_at, c
 `
 
 type CreateAccountParams struct {
-	Email       string
-	Username    string
-	Password    string
-	IsBlock     bool
-	Ua          string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	AccessToken sql.NullString
-	ProxyID     sql.NullInt32
+	Email       string         `json:"email"`
+	Username    string         `json:"username"`
+	Password    string         `json:"password"`
+	IsBlock     bool           `json:"is_block"`
+	Ua          string         `json:"ua"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	AccessToken sql.NullString `json:"access_token"`
+	ProxyID     sql.NullInt32  `json:"proxy_id"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
@@ -104,6 +136,30 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 	return i, err
 }
 
+const createCategory = `-- name: CreateCategory :one
+INSERT INTO public.category (name, description, created_at, updated_at)
+VALUES ($1, $2, NOW(), NOW())
+RETURNING id, name, description, created_at, updated_at
+`
+
+type CreateCategoryParams struct {
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+}
+
+func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error) {
+	row := q.db.QueryRowContext(ctx, createCategory, arg.Name, arg.Description)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createComment = `-- name: CreateComment :one
 INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id, is_analyzed, inserted_at)
 VALUES ($1, $2, $3, $4, $5, false, NOW())
@@ -113,11 +169,11 @@ RETURNING id, content, is_analyzed, created_at, inserted_at, post_id, author_id,
 `
 
 type CreateCommentParams struct {
-	PostID    int32
-	CommentID string
-	Content   string
-	CreatedAt time.Time
-	AuthorID  int32
+	PostID    int32     `json:"post_id"`
+	CommentID string    `json:"comment_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	AuthorID  int32     `json:"author_id"`
 }
 
 func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error) {
@@ -145,12 +201,12 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 const createEmbeddedProfile = `-- name: CreateEmbeddedProfile :one
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
-RETURNING id, pid, embedding, created_at
+RETURNING id, pid, created_at, embedding
 `
 
 type CreateEmbeddedProfileParams struct {
-	Pid       int32
-	Embedding Vector
+	Pid       int32       `json:"pid"`
+	Embedding interface{} `json:"embedding"`
 }
 
 func (q *Queries) CreateEmbeddedProfile(ctx context.Context, arg CreateEmbeddedProfileParams) (EmbeddedProfile, error) {
@@ -159,8 +215,8 @@ func (q *Queries) CreateEmbeddedProfile(ctx context.Context, arg CreateEmbeddedP
 	err := row.Scan(
 		&i.ID,
 		&i.Pid,
-		&i.Embedding,
 		&i.CreatedAt,
+		&i.Embedding,
 	)
 	return i, err
 }
@@ -190,9 +246,9 @@ RETURNING id, group_id, group_name, is_joined, account_id, scanned_at
 `
 
 type CreateGroupParams struct {
-	GroupID   string
-	GroupName string
-	AccountID sql.NullInt32
+	GroupID   string        `json:"group_id"`
+	GroupName string        `json:"group_name"`
+	AccountID sql.NullInt32 `json:"account_id"`
 }
 
 func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error) {
@@ -218,10 +274,10 @@ RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed
 `
 
 type CreatePostParams struct {
-	PostID    string
-	Content   string
-	CreatedAt time.Time
-	GroupID   int32
+	PostID    string    `json:"post_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	GroupID   int32     `json:"group_id"`
 }
 
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
@@ -253,9 +309,9 @@ RETURNING id, facebook_id, name, bio, location, work, education, relationship_st
 `
 
 type CreateProfileParams struct {
-	FacebookID  string
-	Name        sql.NullString
-	ScrapedByID int32
+	FacebookID  string         `json:"facebook_id"`
+	Name        sql.NullString `json:"name"`
+	ScrapedByID int32          `json:"scraped_by_id"`
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (UserProfile, error) {
@@ -297,13 +353,13 @@ WITH next_version AS (
 INSERT INTO public.prompt (service_name, version, content, created_by, created_at)
 SELECT $1, next_version.version, $2, $3, NOW()
 FROM next_version
-RETURNING id, content, service_name, version, created_by, created_at
+RETURNING id, content, service_name, version, created_by, created_at, category_id
 `
 
 type CreatePromptParams struct {
-	ServiceName string
-	Content     string
-	CreatedBy   string
+	ServiceName string `json:"service_name"`
+	Content     string `json:"content"`
+	CreatedBy   string `json:"created_by"`
 }
 
 func (q *Queries) CreatePrompt(ctx context.Context, arg CreatePromptParams) (Prompt, error) {
@@ -316,6 +372,7 @@ func (q *Queries) CreatePrompt(ctx context.Context, arg CreatePromptParams) (Pro
 		&i.Version,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.CategoryID,
 	)
 	return i, err
 }
@@ -339,6 +396,15 @@ DELETE FROM public.account WHERE id = ANY($1::int[])
 
 func (q *Queries) DeleteAccounts(ctx context.Context, dollar_1 []int32) error {
 	_, err := q.db.ExecContext(ctx, deleteAccounts, pq.Array(dollar_1))
+	return err
+}
+
+const deleteCategory = `-- name: DeleteCategory :exec
+DELETE FROM public.category WHERE id = $1
+`
+
+func (q *Queries) DeleteCategory(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, deleteCategory, id)
 	return err
 }
 
@@ -434,15 +500,15 @@ LIMIT $2
 `
 
 type FindSimilarProfilesParams struct {
-	Pid   int32
-	Limit int32
+	Pid   int32 `json:"pid"`
+	Limit int32 `json:"limit"`
 }
 
 type FindSimilarProfilesRow struct {
-	ProfileID   int32
-	ProfileUrl  string
-	ProfileName sql.NullString
-	Similarity  float64
+	ProfileID   int32          `json:"profile_id"`
+	ProfileUrl  string         `json:"profile_url"`
+	ProfileName sql.NullString `json:"profile_name"`
+	Similarity  float64        `json:"similarity"`
 }
 
 func (q *Queries) FindSimilarProfiles(ctx context.Context, arg FindSimilarProfilesParams) ([]FindSimilarProfilesRow, error) {
@@ -504,9 +570,9 @@ SELECT
 `
 
 type GetAccountStatsRow struct {
-	TotalAccounts   int64
-	ActiveAccounts  int64
-	BlockedAccounts int64
+	TotalAccounts   int64 `json:"total_accounts"`
+	ActiveAccounts  int64 `json:"active_accounts"`
+	BlockedAccounts int64 `json:"blocked_accounts"`
 }
 
 func (q *Queries) GetAccountStats(ctx context.Context) (GetAccountStatsRow, error) {
@@ -525,19 +591,19 @@ FROM public.account a LIMIT $1 OFFSET $2
 `
 
 type GetAccountsParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 type GetAccountsRow struct {
-	ID          int32
-	Username    string
-	Email       string
-	UpdatedAt   time.Time
-	AccessToken sql.NullString
-	GroupCount  int64
-	IsLogin     interface{}
-	IsBlock     bool
+	ID          int32          `json:"id"`
+	Username    string         `json:"username"`
+	Email       string         `json:"email"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	AccessToken sql.NullString `json:"access_token"`
+	GroupCount  int64          `json:"group_count"`
+	IsLogin     interface{}    `json:"is_login"`
+	IsBlock     bool           `json:"is_block"`
 }
 
 func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]GetAccountsRow, error) {
@@ -600,9 +666,9 @@ func (q *Queries) GetAllConfigs(ctx context.Context) ([]Config, error) {
 }
 
 const getAllPrompts = `-- name: GetAllPrompts :many
-SELECT id, content, service_name, version, created_by, created_at, rn
+SELECT id, content, service_name, version, created_by, created_at, category_id, rn
 FROM (
-  SELECT id, content, service_name, version, created_by, created_at, ROW_NUMBER() OVER (PARTITION BY service_name ORDER BY version DESC) AS rn
+  SELECT id, content, service_name, version, created_by, created_at, category_id, ROW_NUMBER() OVER (PARTITION BY service_name ORDER BY version DESC) AS rn
   FROM public.prompt
 ) t
 WHERE rn = 1
@@ -611,18 +677,19 @@ LIMIT $1 OFFSET $2
 `
 
 type GetAllPromptsParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 type GetAllPromptsRow struct {
-	ID          int32
-	Content     string
-	ServiceName string
-	Version     int32
-	CreatedBy   string
-	CreatedAt   time.Time
-	Rn          int64
+	ID          int32         `json:"id"`
+	Content     string        `json:"content"`
+	ServiceName string        `json:"service_name"`
+	Version     int32         `json:"version"`
+	CreatedBy   string        `json:"created_by"`
+	CreatedAt   time.Time     `json:"created_at"`
+	CategoryID  sql.NullInt32 `json:"category_id"`
+	Rn          int64         `json:"rn"`
 }
 
 func (q *Queries) GetAllPrompts(ctx context.Context, arg GetAllPromptsParams) ([]GetAllPromptsRow, error) {
@@ -641,6 +708,7 @@ func (q *Queries) GetAllPrompts(ctx context.Context, arg GetAllPromptsParams) ([
 			&i.Version,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.CategoryID,
 			&i.Rn,
 		); err != nil {
 			return nil, err
@@ -656,51 +724,25 @@ func (q *Queries) GetAllPrompts(ctx context.Context, arg GetAllPromptsParams) ([
 	return items, nil
 }
 
-const getCommentsToScan = `-- name: GetCommentsToScan :many
-SELECT c.id, c.content, c.is_analyzed, c.created_at, c.inserted_at, c.post_id, c.author_id, c.comment_id, a.access_token FROM public.comment c
-JOIN public.post p ON c.post_id = p.id
-JOIN public."group" g ON p.group_id = g.id
-JOIN public.account a ON g.account_id = a.id
-WHERE c.is_analyzed = false AND g.account_id = $1
-ORDER BY c.inserted_at ASC LIMIT $2
+const getCategories = `-- name: GetCategories :many
+SELECT id, name, description, created_at, updated_at FROM public.category ORDER BY name
 `
 
-type GetCommentsToScanParams struct {
-	AccountID sql.NullInt32
-	Limit     int32
-}
-
-type GetCommentsToScanRow struct {
-	ID          int32
-	Content     string
-	IsAnalyzed  bool
-	CreatedAt   time.Time
-	InsertedAt  time.Time
-	PostID      int32
-	AuthorID    int32
-	CommentID   string
-	AccessToken sql.NullString
-}
-
-func (q *Queries) GetCommentsToScan(ctx context.Context, arg GetCommentsToScanParams) ([]GetCommentsToScanRow, error) {
-	rows, err := q.db.QueryContext(ctx, getCommentsToScan, arg.AccountID, arg.Limit)
+func (q *Queries) GetCategories(ctx context.Context) ([]Category, error) {
+	rows, err := q.db.QueryContext(ctx, getCategories)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetCommentsToScanRow
+	var items []Category
 	for rows.Next() {
-		var i GetCommentsToScanRow
+		var i Category
 		if err := rows.Scan(
 			&i.ID,
-			&i.Content,
-			&i.IsAnalyzed,
+			&i.Name,
+			&i.Description,
 			&i.CreatedAt,
-			&i.InsertedAt,
-			&i.PostID,
-			&i.AuthorID,
-			&i.CommentID,
-			&i.AccessToken,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -727,7 +769,6 @@ func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error
 }
 
 const getDashboardStats = `-- name: GetDashboardStats :one
-
 SELECT
   (SELECT COUNT(*) FROM public."group") AS total_groups,
   (SELECT COUNT(*) FROM public.comment) AS total_comments,
@@ -743,20 +784,19 @@ SELECT
 `
 
 type GetDashboardStatsRow struct {
-	TotalGroups      int64
-	TotalComments    int64
-	TotalPosts       int64
-	TotalProfiles    int64
-	EmbeddedCount    int64
-	ScannedProfiles  int64
-	ScoredProfiles   int64
-	AnalyzedProfiles int64
-	TotalAccounts    int64
-	ActiveAccounts   int64
-	BlockedAccounts  int64
+	TotalGroups      int64 `json:"total_groups"`
+	TotalComments    int64 `json:"total_comments"`
+	TotalPosts       int64 `json:"total_posts"`
+	TotalProfiles    int64 `json:"total_profiles"`
+	EmbeddedCount    int64 `json:"embedded_count"`
+	ScannedProfiles  int64 `json:"scanned_profiles"`
+	ScoredProfiles   int64 `json:"scored_profiles"`
+	AnalyzedProfiles int64 `json:"analyzed_profiles"`
+	TotalAccounts    int64 `json:"total_accounts"`
+	ActiveAccounts   int64 `json:"active_accounts"`
+	BlockedAccounts  int64 `json:"blocked_accounts"`
 }
 
-// Charts API Queries
 func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, error) {
 	row := q.db.QueryRowContext(ctx, getDashboardStats)
 	var i GetDashboardStatsRow
@@ -824,74 +864,50 @@ func (q *Queries) GetGeminiKeys(ctx context.Context) ([]GeminiKey, error) {
 	return items, nil
 }
 
-const getGroupById = `-- name: GetGroupById :one
-SELECT id, group_id, group_name, is_joined, account_id, scanned_at FROM public."group" WHERE id = $1
-`
-
-func (q *Queries) GetGroupById(ctx context.Context, id int32) (Group, error) {
-	row := q.db.QueryRowContext(ctx, getGroupById, id)
-	var i Group
-	err := row.Scan(
-		&i.ID,
-		&i.GroupID,
-		&i.GroupName,
-		&i.IsJoined,
-		&i.AccountID,
-		&i.ScannedAt,
-	)
-	return i, err
-}
-
-const getGroupByIdWithAccount = `-- name: GetGroupByIdWithAccount :one
-SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.password, a.email, a.username, a.access_token FROM public."group" g
-JOIN public.account a ON g.account_id = a.id
-WHERE g.id = $1
-`
-
-type GetGroupByIdWithAccountRow struct {
-	ID          int32
-	GroupID     string
-	GroupName   string
-	IsJoined    bool
-	AccountID   sql.NullInt32
-	ScannedAt   sql.NullTime
-	Password    string
-	Email       string
-	Username    string
-	AccessToken sql.NullString
-}
-
-func (q *Queries) GetGroupByIdWithAccount(ctx context.Context, id int32) (GetGroupByIdWithAccountRow, error) {
-	row := q.db.QueryRowContext(ctx, getGroupByIdWithAccount, id)
-	var i GetGroupByIdWithAccountRow
-	err := row.Scan(
-		&i.ID,
-		&i.GroupID,
-		&i.GroupName,
-		&i.IsJoined,
-		&i.AccountID,
-		&i.ScannedAt,
-		&i.Password,
-		&i.Email,
-		&i.Username,
-		&i.AccessToken,
-	)
-	return i, err
-}
-
 const getGroupsByAccountId = `-- name: GetGroupsByAccountId :many
-SELECT id, group_id, group_name, is_joined, account_id, scanned_at FROM public."group" WHERE account_id = $1
+SELECT 
+  g.id,
+  g.group_id,
+  g.group_name,
+  g.is_joined,
+  g.account_id,
+  g.scanned_at,
+  COALESCE(
+    (SELECT json_agg(json_build_object(
+      'id', c.id,
+      'name', c.name,
+      'description', c.description,
+      'created_at', c.created_at,
+      'updated_at', c.updated_at
+    )) 
+     FROM public.category c
+     JOIN public.group_category gc ON c.id = gc.category_id
+     WHERE gc.group_id = g.id),
+    '[]'::json
+  ) as categories 
+FROM public."group" g 
+WHERE g.account_id = $1
 `
 
-func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullInt32) ([]Group, error) {
+type GetGroupsByAccountIdRow struct {
+	ID         int32         `json:"id"`
+	GroupID    string        `json:"group_id"`
+	GroupName  string        `json:"group_name"`
+	IsJoined   bool          `json:"is_joined"`
+	AccountID  sql.NullInt32 `json:"account_id"`
+	ScannedAt  sql.NullTime  `json:"scanned_at"`
+	Categories interface{}   `json:"categories"`
+}
+
+func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullInt32) ([]GetGroupsByAccountIdRow, error) {
 	rows, err := q.db.QueryContext(ctx, getGroupsByAccountId, accountID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Group
+	var items []GetGroupsByAccountIdRow
 	for rows.Next() {
-		var i Group
+		var i GetGroupsByAccountIdRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.GroupID,
@@ -899,6 +915,7 @@ func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullIn
 			&i.IsJoined,
 			&i.AccountID,
 			&i.ScannedAt,
+			&i.Categories,
 		); err != nil {
 			return nil, err
 		}
@@ -914,25 +931,47 @@ func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullIn
 }
 
 const getGroupsToScan = `-- name: GetGroupsToScan :many
-SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.access_token FROM public."group" g
+SELECT 
+  g.id,
+  g.group_id,
+  g.group_name,
+  g.is_joined,
+  g.account_id,
+  g.scanned_at,
+  a.access_token,
+  COALESCE(
+    (SELECT json_agg(json_build_object(
+      'id', c.id,
+      'name', c.name,
+      'description', c.description,
+      'created_at', c.created_at,
+      'updated_at', c.updated_at
+    )) 
+     FROM public.category c
+     JOIN public.group_category gc ON c.id = gc.category_id
+     WHERE gc.group_id = g.id),
+    '[]'::json
+  ) as categories 
+FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.is_joined = true AND g.account_id = $1
-ORDER BY scanned_at ASC NULLS FIRST LIMIT $2
+ORDER BY g.scanned_at ASC NULLS FIRST LIMIT $2
 `
 
 type GetGroupsToScanParams struct {
-	AccountID sql.NullInt32
-	Limit     int32
+	AccountID sql.NullInt32 `json:"account_id"`
+	Limit     int32         `json:"limit"`
 }
 
 type GetGroupsToScanRow struct {
-	ID          int32
-	GroupID     string
-	GroupName   string
-	IsJoined    bool
-	AccountID   sql.NullInt32
-	ScannedAt   sql.NullTime
-	AccessToken sql.NullString
+	ID          int32          `json:"id"`
+	GroupID     string         `json:"group_id"`
+	GroupName   string         `json:"group_name"`
+	IsJoined    bool           `json:"is_joined"`
+	AccountID   sql.NullInt32  `json:"account_id"`
+	ScannedAt   sql.NullTime   `json:"scanned_at"`
+	AccessToken sql.NullString `json:"access_token"`
+	Categories  interface{}    `json:"categories"`
 }
 
 func (q *Queries) GetGroupsToScan(ctx context.Context, arg GetGroupsToScanParams) ([]GetGroupsToScanRow, error) {
@@ -952,6 +991,7 @@ func (q *Queries) GetGroupsToScan(ctx context.Context, arg GetGroupsToScanParams
 			&i.AccountID,
 			&i.ScannedAt,
 			&i.AccessToken,
+			&i.Categories,
 		); err != nil {
 			return nil, err
 		}
@@ -974,18 +1014,18 @@ LIMIT $1 OFFSET $2
 `
 
 type GetLogsParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 type GetLogsRow struct {
-	ID          int32
-	AccountID   sql.NullInt32
-	Action      string
-	TargetID    sql.NullInt32
-	Description sql.NullString
-	CreatedAt   sql.NullTime
-	Username    sql.NullString
+	ID          int32          `json:"id"`
+	AccountID   sql.NullInt32  `json:"account_id"`
+	Action      string         `json:"action"`
+	TargetID    sql.NullInt32  `json:"target_id"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+	Username    sql.NullString `json:"username"`
 }
 
 func (q *Queries) GetLogs(ctx context.Context, arg GetLogsParams) ([]GetLogsRow, error) {
@@ -1052,195 +1092,76 @@ func (q *Queries) GetOKAccountIds(ctx context.Context) ([]int32, error) {
 	return items, nil
 }
 
-const getPostById = `-- name: GetPostById :one
-SELECT id, post_id, content, created_at, inserted_at, group_id, is_analyzed FROM public.post WHERE id = $1
-`
-
-func (q *Queries) GetPostById(ctx context.Context, id int32) (Post, error) {
-	row := q.db.QueryRowContext(ctx, getPostById, id)
-	var i Post
-	err := row.Scan(
-		&i.ID,
-		&i.PostID,
-		&i.Content,
-		&i.CreatedAt,
-		&i.InsertedAt,
-		&i.GroupID,
-		&i.IsAnalyzed,
-	)
-	return i, err
-}
-
-const getPostByIdWithAccount = `-- name: GetPostByIdWithAccount :one
-SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.password, a.email, a.username, a.access_token, a.id AS account_id FROM public.post p
-JOIN public."group" g ON p.group_id = g.id
-JOIN public.account a ON g.account_id = a.id
-WHERE p.id = $1
-`
-
-type GetPostByIdWithAccountRow struct {
-	ID          int32
-	PostID      string
-	Content     string
-	CreatedAt   time.Time
-	InsertedAt  time.Time
-	GroupID     int32
-	IsAnalyzed  bool
-	Password    string
-	Email       string
-	Username    string
-	AccessToken sql.NullString
-	AccountID   int32
-}
-
-func (q *Queries) GetPostByIdWithAccount(ctx context.Context, id int32) (GetPostByIdWithAccountRow, error) {
-	row := q.db.QueryRowContext(ctx, getPostByIdWithAccount, id)
-	var i GetPostByIdWithAccountRow
-	err := row.Scan(
-		&i.ID,
-		&i.PostID,
-		&i.Content,
-		&i.CreatedAt,
-		&i.InsertedAt,
-		&i.GroupID,
-		&i.IsAnalyzed,
-		&i.Password,
-		&i.Email,
-		&i.Username,
-		&i.AccessToken,
-		&i.AccountID,
-	)
-	return i, err
-}
-
-const getPostsToScan = `-- name: GetPostsToScan :many
-SELECT p.id, p.post_id, p.content, p.created_at, p.inserted_at, p.group_id, p.is_analyzed, a.access_token FROM public.post p
-JOIN "group" g ON p.group_id = g.id
-JOIN account a ON g.account_id = a.id
-WHERE g.account_id = $1
-ORDER BY inserted_at ASC LIMIT $2
-`
-
-type GetPostsToScanParams struct {
-	AccountID sql.NullInt32
-	Limit     int32
-}
-
-type GetPostsToScanRow struct {
-	ID          int32
-	PostID      string
-	Content     string
-	CreatedAt   time.Time
-	InsertedAt  time.Time
-	GroupID     int32
-	IsAnalyzed  bool
-	AccessToken sql.NullString
-}
-
-func (q *Queries) GetPostsToScan(ctx context.Context, arg GetPostsToScanParams) ([]GetPostsToScanRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsToScan, arg.AccountID, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetPostsToScanRow
-	for rows.Next() {
-		var i GetPostsToScanRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PostID,
-			&i.Content,
-			&i.CreatedAt,
-			&i.InsertedAt,
-			&i.GroupID,
-			&i.IsAnalyzed,
-			&i.AccessToken,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getProfileById = `-- name: GetProfileById :one
-SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score FROM public.user_profile WHERE id = $1
-`
-
-func (q *Queries) GetProfileById(ctx context.Context, id int32) (UserProfile, error) {
-	row := q.db.QueryRowContext(ctx, getProfileById, id)
-	var i UserProfile
-	err := row.Scan(
-		&i.ID,
-		&i.FacebookID,
-		&i.Name,
-		&i.Bio,
-		&i.Location,
-		&i.Work,
-		&i.Education,
-		&i.RelationshipStatus,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ScrapedByID,
-		&i.IsScanned,
-		&i.Hometown,
-		&i.Locale,
-		&i.Gender,
-		&i.Birthday,
-		&i.Email,
-		&i.Phone,
-		&i.ProfileUrl,
-		&i.IsAnalyzed,
-		&i.GeminiScore,
-		&i.ModelScore,
-	)
-	return i, err
-}
-
-const getProfileByIdWithAccount = `-- name: GetProfileByIdWithAccount :one
-SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score, a.password, a.email, a.username, a.access_token FROM public.user_profile up
-JOIN public.account a ON up.scraped_by_id = a.id
+SELECT 
+  up.id,
+  up.facebook_id,
+  up.name,
+  up.bio,
+  up.location,
+  up.work,
+  up.education,
+  up.relationship_status,
+  up.created_at,
+  up.updated_at,
+  up.scraped_by_id,
+  up.is_scanned,
+  up.hometown,
+  up.locale,
+  up.gender,
+  up.birthday,
+  up.email,
+  up.phone,
+  up.profile_url,
+  up.is_analyzed,
+  up.gemini_score,
+  up.model_score,
+  COALESCE(
+    (SELECT json_agg(json_build_object(
+      'id', c.id,
+      'name', c.name,
+      'description', c.description,
+      'created_at', c.created_at,
+      'updated_at', c.updated_at
+    )) 
+     FROM public.category c
+     JOIN public.user_profile_category upc ON c.id = upc.category_id
+     WHERE upc.user_profile_id = up.id),
+    '[]'::json
+  ) as categories
+FROM public.user_profile up 
 WHERE up.id = $1
 `
 
-type GetProfileByIdWithAccountRow struct {
-	ID                 int32
-	FacebookID         string
-	Name               sql.NullString
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ScrapedByID        int32
-	IsScanned          bool
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
-	ProfileUrl         string
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
-	ModelScore         sql.NullFloat64
-	Password           string
-	Email_2            string
-	Username           string
-	AccessToken        sql.NullString
+type GetProfileByIdRow struct {
+	ID                 int32           `json:"id"`
+	FacebookID         string          `json:"facebook_id"`
+	Name               sql.NullString  `json:"name"`
+	Bio                sql.NullString  `json:"bio"`
+	Location           sql.NullString  `json:"location"`
+	Work               sql.NullString  `json:"work"`
+	Education          sql.NullString  `json:"education"`
+	RelationshipStatus sql.NullString  `json:"relationship_status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	ScrapedByID        int32           `json:"scraped_by_id"`
+	IsScanned          bool            `json:"is_scanned"`
+	Hometown           sql.NullString  `json:"hometown"`
+	Locale             string          `json:"locale"`
+	Gender             sql.NullString  `json:"gender"`
+	Birthday           sql.NullString  `json:"birthday"`
+	Email              sql.NullString  `json:"email"`
+	Phone              sql.NullString  `json:"phone"`
+	ProfileUrl         string          `json:"profile_url"`
+	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
+	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
+	ModelScore         sql.NullFloat64 `json:"model_score"`
+	Categories         interface{}     `json:"categories"`
 }
 
-func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetProfileByIdWithAccountRow, error) {
-	row := q.db.QueryRowContext(ctx, getProfileByIdWithAccount, id)
-	var i GetProfileByIdWithAccountRow
+func (q *Queries) GetProfileById(ctx context.Context, id int32) (GetProfileByIdRow, error) {
+	row := q.db.QueryRowContext(ctx, getProfileById, id)
+	var i GetProfileByIdRow
 	err := row.Scan(
 		&i.ID,
 		&i.FacebookID,
@@ -1264,10 +1185,7 @@ func (q *Queries) GetProfileByIdWithAccount(ctx context.Context, id int32) (GetP
 		&i.IsAnalyzed,
 		&i.GeminiScore,
 		&i.ModelScore,
-		&i.Password,
-		&i.Email_2,
-		&i.Username,
-		&i.AccessToken,
+		&i.Categories,
 	)
 	return i, err
 }
@@ -1276,9 +1194,9 @@ const getProfileEmbedding = `-- name: GetProfileEmbedding :one
 SELECT embedding FROM public.embedded_profile WHERE pid = $1
 `
 
-func (q *Queries) GetProfileEmbedding(ctx context.Context, pid int32) (Vector, error) {
+func (q *Queries) GetProfileEmbedding(ctx context.Context, pid int32) (interface{}, error) {
 	row := q.db.QueryRowContext(ctx, getProfileEmbedding, pid)
-	var embedding Vector
+	var embedding interface{}
 	err := row.Scan(&embedding)
 	return embedding, err
 }
@@ -1323,11 +1241,11 @@ SELECT
 `
 
 type GetProfileStatsRow struct {
-	TotalProfiles    int64
-	EmbeddedCount    int64
-	ScannedProfiles  int64
-	ScoredProfiles   int64
-	AnalyzedProfiles int64
+	TotalProfiles    int64 `json:"total_profiles"`
+	EmbeddedCount    int64 `json:"embedded_count"`
+	ScannedProfiles  int64 `json:"scanned_profiles"`
+	ScoredProfiles   int64 `json:"scored_profiles"`
+	AnalyzedProfiles int64 `json:"analyzed_profiles"`
 }
 
 func (q *Queries) GetProfileStats(ctx context.Context) (GetProfileStatsRow, error) {
@@ -1363,29 +1281,29 @@ LIMIT $1
 `
 
 type GetProfilesAnalysisCronjobRow struct {
-	ID                 int32
-	FacebookID         string
-	Name               sql.NullString
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ScrapedByID        int32
-	IsScanned          bool
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
-	ProfileUrl         string
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
-	ModelScore         sql.NullFloat64
-	NonNullCount       int32
+	ID                 int32           `json:"id"`
+	FacebookID         string          `json:"facebook_id"`
+	Name               sql.NullString  `json:"name"`
+	Bio                sql.NullString  `json:"bio"`
+	Location           sql.NullString  `json:"location"`
+	Work               sql.NullString  `json:"work"`
+	Education          sql.NullString  `json:"education"`
+	RelationshipStatus sql.NullString  `json:"relationship_status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	ScrapedByID        int32           `json:"scraped_by_id"`
+	IsScanned          bool            `json:"is_scanned"`
+	Hometown           sql.NullString  `json:"hometown"`
+	Locale             string          `json:"locale"`
+	Gender             sql.NullString  `json:"gender"`
+	Birthday           sql.NullString  `json:"birthday"`
+	Email              sql.NullString  `json:"email"`
+	Phone              sql.NullString  `json:"phone"`
+	ProfileUrl         string          `json:"profile_url"`
+	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
+	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
+	ModelScore         sql.NullFloat64 `json:"model_score"`
+	NonNullCount       int32           `json:"non_null_count"`
 }
 
 func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, limit int32) ([]GetProfilesAnalysisCronjobRow, error) {
@@ -1443,6 +1361,19 @@ SELECT
   up.is_analyzed,
   up.gemini_score,
   up.model_score,
+  COALESCE(
+    (SELECT json_agg(json_build_object(
+      'id', c.id,
+      'name', c.name,
+      'description', c.description,
+      'created_at', c.created_at,
+      'updated_at', c.updated_at
+    )) 
+     FROM public.category c
+     JOIN public.user_profile_category upc ON c.id = upc.category_id
+     WHERE upc.user_profile_id = up.id),
+    '[]'::json
+  ) as categories,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -1461,18 +1392,19 @@ LIMIT $1 OFFSET $2
 `
 
 type GetProfilesAnalysisPageParams struct {
-	Limit  int32
-	Offset int32
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 type GetProfilesAnalysisPageRow struct {
-	ID           int32
-	FacebookID   string
-	Name         sql.NullString
-	IsAnalyzed   sql.NullBool
-	GeminiScore  sql.NullFloat64
-	ModelScore   sql.NullFloat64
-	NonNullCount int32
+	ID           int32           `json:"id"`
+	FacebookID   string          `json:"facebook_id"`
+	Name         sql.NullString  `json:"name"`
+	IsAnalyzed   sql.NullBool    `json:"is_analyzed"`
+	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
+	ModelScore   sql.NullFloat64 `json:"model_score"`
+	Categories   interface{}     `json:"categories"`
+	NonNullCount int32           `json:"non_null_count"`
 }
 
 func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAnalysisPageParams) ([]GetProfilesAnalysisPageRow, error) {
@@ -1491,6 +1423,7 @@ func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAn
 			&i.IsAnalyzed,
 			&i.GeminiScore,
 			&i.ModelScore,
+			&i.Categories,
 			&i.NonNullCount,
 		); err != nil {
 			return nil, err
@@ -1512,29 +1445,29 @@ JOIN public.embedded_profile ep ON up.id = ep.pid
 `
 
 type GetProfilesForExportRow struct {
-	ID                 int32
-	FacebookID         string
-	Name               sql.NullString
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ScrapedByID        int32
-	IsScanned          bool
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
-	ProfileUrl         string
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
-	ModelScore         sql.NullFloat64
-	Embedding          Vector
+	ID                 int32           `json:"id"`
+	FacebookID         string          `json:"facebook_id"`
+	Name               sql.NullString  `json:"name"`
+	Bio                sql.NullString  `json:"bio"`
+	Location           sql.NullString  `json:"location"`
+	Work               sql.NullString  `json:"work"`
+	Education          sql.NullString  `json:"education"`
+	RelationshipStatus sql.NullString  `json:"relationship_status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	ScrapedByID        int32           `json:"scraped_by_id"`
+	IsScanned          bool            `json:"is_scanned"`
+	Hometown           sql.NullString  `json:"hometown"`
+	Locale             string          `json:"locale"`
+	Gender             sql.NullString  `json:"gender"`
+	Birthday           sql.NullString  `json:"birthday"`
+	Email              sql.NullString  `json:"email"`
+	Phone              sql.NullString  `json:"phone"`
+	ProfileUrl         string          `json:"profile_url"`
+	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
+	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
+	ModelScore         sql.NullFloat64 `json:"model_score"`
+	Embedding          interface{}     `json:"embedding"`
 }
 
 func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExportRow, error) {
@@ -1623,30 +1556,30 @@ ORDER BY up.updated_at ASC LIMIT $1
 `
 
 type GetProfilesToScanRow struct {
-	ID                 int32
-	FacebookID         string
-	Name               sql.NullString
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ScrapedByID        int32
-	IsScanned          bool
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
-	ProfileUrl         string
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
-	ModelScore         sql.NullFloat64
-	AccessToken        sql.NullString
-	AccountID          int32
+	ID                 int32           `json:"id"`
+	FacebookID         string          `json:"facebook_id"`
+	Name               sql.NullString  `json:"name"`
+	Bio                sql.NullString  `json:"bio"`
+	Location           sql.NullString  `json:"location"`
+	Work               sql.NullString  `json:"work"`
+	Education          sql.NullString  `json:"education"`
+	RelationshipStatus sql.NullString  `json:"relationship_status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	ScrapedByID        int32           `json:"scraped_by_id"`
+	IsScanned          bool            `json:"is_scanned"`
+	Hometown           sql.NullString  `json:"hometown"`
+	Locale             string          `json:"locale"`
+	Gender             sql.NullString  `json:"gender"`
+	Birthday           sql.NullString  `json:"birthday"`
+	Email              sql.NullString  `json:"email"`
+	Phone              sql.NullString  `json:"phone"`
+	ProfileUrl         string          `json:"profile_url"`
+	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
+	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
+	ModelScore         sql.NullFloat64 `json:"model_score"`
+	AccessToken        sql.NullString  `json:"access_token"`
+	AccountID          int32           `json:"account_id"`
 }
 
 func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProfilesToScanRow, error) {
@@ -1698,7 +1631,7 @@ func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProf
 }
 
 const getPrompt = `-- name: GetPrompt :one
-SELECT id, content, service_name, version, created_by, created_at FROM public.prompt
+SELECT id, content, service_name, version, created_by, created_at, category_id FROM public.prompt
 WHERE service_name = $1
 ORDER BY version DESC LIMIT 1
 `
@@ -1713,6 +1646,7 @@ func (q *Queries) GetPrompt(ctx context.Context, serviceName string) (Prompt, er
 		&i.Version,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.CategoryID,
 	)
 	return i, err
 }
@@ -1783,9 +1717,9 @@ ORDER BY sr.range
 `
 
 type GetScoreDistributionRow struct {
-	ScoreRange  string
-	GeminiCount int64
-	ModelCount  int64
+	ScoreRange  string `json:"score_range"`
+	GeminiCount int64  `json:"gemini_count"`
+	ModelCount  int64  `json:"model_count"`
 }
 
 func (q *Queries) GetScoreDistribution(ctx context.Context) ([]GetScoreDistributionRow, error) {
@@ -1819,9 +1753,9 @@ SELECT
 `
 
 type GetStatsRow struct {
-	TotalGroups   int64
-	TotalComments int64
-	TotalPosts    int64
+	TotalGroups   int64 `json:"total_groups"`
+	TotalComments int64 `json:"total_comments"`
+	TotalPosts    int64 `json:"total_posts"`
 }
 
 func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
@@ -1842,8 +1776,8 @@ ORDER BY date
 `
 
 type GetTimeSeriesDataRow struct {
-	Date  time.Time
-	Count int64
+	Date  time.Time `json:"date"`
+	Count int64     `json:"count"`
 }
 
 func (q *Queries) GetTimeSeriesData(ctx context.Context) ([]GetTimeSeriesDataRow, error) {
@@ -1894,25 +1828,25 @@ RETURNING id, facebook_id, name, bio, location, work, education, relationship_st
 `
 
 type ImportProfileParams struct {
-	FacebookID         string
-	Name               sql.NullString
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	IsScanned          bool
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
-	ProfileUrl         string
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
+	FacebookID         string          `json:"facebook_id"`
+	Name               sql.NullString  `json:"name"`
+	Bio                sql.NullString  `json:"bio"`
+	Location           sql.NullString  `json:"location"`
+	Work               sql.NullString  `json:"work"`
+	Education          sql.NullString  `json:"education"`
+	RelationshipStatus sql.NullString  `json:"relationship_status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	IsScanned          bool            `json:"is_scanned"`
+	Hometown           sql.NullString  `json:"hometown"`
+	Locale             string          `json:"locale"`
+	Gender             sql.NullString  `json:"gender"`
+	Birthday           sql.NullString  `json:"birthday"`
+	Email              sql.NullString  `json:"email"`
+	Phone              sql.NullString  `json:"phone"`
+	ProfileUrl         string          `json:"profile_url"`
+	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
+	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
 }
 
 func (q *Queries) ImportProfile(ctx context.Context, arg ImportProfileParams) (UserProfile, error) {
@@ -1971,10 +1905,10 @@ VALUES ($1, $2, $3, $4, NOW())
 `
 
 type LogActionParams struct {
-	AccountID   sql.NullInt32
-	Action      string
-	TargetID    sql.NullInt32
-	Description sql.NullString
+	AccountID   sql.NullInt32  `json:"account_id"`
+	Action      string         `json:"action"`
+	TargetID    sql.NullInt32  `json:"target_id"`
+	Description sql.NullString `json:"description"`
 }
 
 func (q *Queries) LogAction(ctx context.Context, arg LogActionParams) error {
@@ -2005,8 +1939,8 @@ RETURNING id, email, username, password, is_block, ua, created_at, updated_at, c
 `
 
 type UpdateAccountAccessTokenParams struct {
-	ID          int32
-	AccessToken sql.NullString
+	ID          int32          `json:"id"`
+	AccessToken sql.NullString `json:"access_token"`
 }
 
 func (q *Queries) UpdateAccountAccessToken(ctx context.Context, arg UpdateAccountAccessTokenParams) (Account, error) {
@@ -2039,10 +1973,10 @@ RETURNING id, email, username, password, is_block, ua, created_at, updated_at, c
 `
 
 type UpdateAccountCredentialsParams struct {
-	ID       int32
-	Email    string
-	Username string
-	Password string
+	ID       int32  `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 func (q *Queries) UpdateAccountCredentials(ctx context.Context, arg UpdateAccountCredentialsParams) (Account, error) {
@@ -2069,6 +2003,34 @@ func (q *Queries) UpdateAccountCredentials(ctx context.Context, arg UpdateAccoun
 	return i, err
 }
 
+const updateCategory = `-- name: UpdateCategory :one
+UPDATE public.category
+SET name = $2,
+    description = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, description, created_at, updated_at
+`
+
+type UpdateCategoryParams struct {
+	ID          int32          `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+}
+
+func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error) {
+	row := q.db.QueryRowContext(ctx, updateCategory, arg.ID, arg.Name, arg.Description)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateGeminiAnalysisProfile = `-- name: UpdateGeminiAnalysisProfile :one
 UPDATE public.user_profile
 SET gemini_score = $2,
@@ -2079,8 +2041,8 @@ RETURNING gemini_score
 `
 
 type UpdateGeminiAnalysisProfileParams struct {
-	ID          int32
-	GeminiScore sql.NullFloat64
+	ID          int32           `json:"id"`
+	GeminiScore sql.NullFloat64 `json:"gemini_score"`
 }
 
 func (q *Queries) UpdateGeminiAnalysisProfile(ctx context.Context, arg UpdateGeminiAnalysisProfileParams) (sql.NullFloat64, error) {
@@ -2099,8 +2061,8 @@ RETURNING id, api_key, token_used, updated_at
 `
 
 type UpdateGeminiKeyUsageParams struct {
-	ApiKey    string
-	TokenUsed int64
+	ApiKey    string `json:"api_key"`
+	TokenUsed int64  `json:"token_used"`
 }
 
 func (q *Queries) UpdateGeminiKeyUsage(ctx context.Context, arg UpdateGeminiKeyUsageParams) (GeminiKey, error) {
@@ -2133,8 +2095,8 @@ WHERE id = $1
 `
 
 type UpdateModelScoreParams struct {
-	ID         int32
-	ModelScore sql.NullFloat64
+	ID         int32           `json:"id"`
+	ModelScore sql.NullFloat64 `json:"model_score"`
 }
 
 func (q *Queries) UpdateModelScore(ctx context.Context, arg UpdateModelScoreParams) error {
@@ -2163,19 +2125,19 @@ RETURNING id, facebook_id, name, bio, location, work, education, relationship_st
 `
 
 type UpdateProfileAfterScanParams struct {
-	ID                 int32
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	ProfileUrl         string
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
+	ID                 int32          `json:"id"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	ProfileUrl         string         `json:"profile_url"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
 }
 
 func (q *Queries) UpdateProfileAfterScan(ctx context.Context, arg UpdateProfileAfterScanParams) (UserProfile, error) {
@@ -2267,11 +2229,11 @@ WHERE id = $1
 `
 
 type UpdateRequestStatusParams struct {
-	ID           int32
-	Status       int16
-	ErrorMessage sql.NullString
-	Progress     float64
-	Description  sql.NullString
+	ID           int32          `json:"id"`
+	Status       int16          `json:"status"`
+	ErrorMessage sql.NullString `json:"error_message"`
+	Progress     float64        `json:"progress"`
+	Description  sql.NullString `json:"description"`
 }
 
 func (q *Queries) UpdateRequestStatus(ctx context.Context, arg UpdateRequestStatusParams) error {
@@ -2293,8 +2255,8 @@ RETURNING id, key, value
 `
 
 type UpsertConfigParams struct {
-	Key   string
-	Value string
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 func (q *Queries) UpsertConfig(ctx context.Context, arg UpsertConfigParams) (Config, error) {
@@ -2313,8 +2275,8 @@ ON CONFLICT (pid) DO UPDATE SET
 `
 
 type UpsertEmbeddedProfilesParams struct {
-	Pid       int32
-	Embedding Vector
+	Pid       int32       `json:"pid"`
+	Embedding interface{} `json:"embedding"`
 }
 
 func (q *Queries) UpsertEmbeddedProfiles(ctx context.Context, arg UpsertEmbeddedProfilesParams) error {

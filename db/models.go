@@ -12,152 +12,173 @@ import (
 )
 
 type Account struct {
-	ID          int32
-	Email       string
-	Username    string
-	Password    string
-	IsBlock     bool
-	Ua          string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	Cookies     pqtype.NullRawMessage
-	AccessToken sql.NullString
-	ProxyID     sql.NullInt32
+	ID          int32                 `json:"id"`
+	Email       string                `json:"email"`
+	Username    string                `json:"username"`
+	Password    string                `json:"password"`
+	IsBlock     bool                  `json:"is_block"`
+	Ua          string                `json:"ua"`
+	CreatedAt   time.Time             `json:"created_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
+	Cookies     pqtype.NullRawMessage `json:"cookies"`
+	AccessToken sql.NullString        `json:"access_token"`
+	ProxyID     sql.NullInt32         `json:"proxy_id"`
+}
+
+type Category struct {
+	ID          int32          `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 type Comment struct {
-	ID         int32
-	Content    string
-	IsAnalyzed bool
-	CreatedAt  time.Time
-	InsertedAt time.Time
-	PostID     int32
-	AuthorID   int32
-	CommentID  string
+	ID         int32     `json:"id"`
+	Content    string    `json:"content"`
+	IsAnalyzed bool      `json:"is_analyzed"`
+	CreatedAt  time.Time `json:"created_at"`
+	InsertedAt time.Time `json:"inserted_at"`
+	PostID     int32     `json:"post_id"`
+	AuthorID   int32     `json:"author_id"`
+	CommentID  string    `json:"comment_id"`
 }
 
 type Config struct {
-	ID    int32
-	Key   string
-	Value string
+	ID    int32  `json:"id"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type EmbeddedProfile struct {
-	ID        int32
-	Pid       int32
-	Embedding Vector
-	CreatedAt sql.NullTime
+	ID        int32        `json:"id"`
+	Pid       int32        `json:"pid"`
+	CreatedAt sql.NullTime `json:"created_at"`
+	Embedding interface{}  `json:"embedding"`
 }
 
 type FinancialAnalysis struct {
-	ID                   int32
-	FinancialStatus      string
-	ConfidenceScore      float64
-	AnalysisSummary      string
-	Indicators           pqtype.NullRawMessage
-	GeminiModelUsed      string
-	PromptTokensUsed     sql.NullInt32
-	PromptUsedID         int32
-	CompletionTokensUsed sql.NullInt32
-	TotalTokensUsed      sql.NullInt32
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	UserProfileID        int32
+	ID                   int32                 `json:"id"`
+	FinancialStatus      string                `json:"financial_status"`
+	ConfidenceScore      float64               `json:"confidence_score"`
+	AnalysisSummary      string                `json:"analysis_summary"`
+	Indicators           pqtype.NullRawMessage `json:"indicators"`
+	GeminiModelUsed      string                `json:"gemini_model_used"`
+	PromptTokensUsed     sql.NullInt32         `json:"prompt_tokens_used"`
+	PromptUsedID         int32                 `json:"prompt_used_id"`
+	CompletionTokensUsed sql.NullInt32         `json:"completion_tokens_used"`
+	TotalTokensUsed      sql.NullInt32         `json:"total_tokens_used"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
+	UserProfileID        int32                 `json:"user_profile_id"`
 }
 
 type GeminiKey struct {
-	ID        int32
-	ApiKey    string
-	TokenUsed int64
-	UpdatedAt sql.NullTime
+	ID        int32        `json:"id"`
+	ApiKey    string       `json:"api_key"`
+	TokenUsed int64        `json:"token_used"`
+	UpdatedAt sql.NullTime `json:"updated_at"`
+}
+
+type GooseDbVersion struct {
+	ID        int32     `json:"id"`
+	VersionID int64     `json:"version_id"`
+	IsApplied bool      `json:"is_applied"`
+	Tstamp    time.Time `json:"tstamp"`
 }
 
 type Group struct {
-	ID        int32
-	GroupID   string
-	GroupName string
-	IsJoined  bool
-	AccountID sql.NullInt32
-	ScannedAt sql.NullTime
+	ID        int32         `json:"id"`
+	GroupID   string        `json:"group_id"`
+	GroupName string        `json:"group_name"`
+	IsJoined  bool          `json:"is_joined"`
+	AccountID sql.NullInt32 `json:"account_id"`
+	ScannedAt sql.NullTime  `json:"scanned_at"`
 }
 
-type Image struct {
-	ID         int32
-	Path       string
-	IsAnalyzed bool
-	BelongToID int32
+type GroupCategory struct {
+	GroupID    int32     `json:"group_id"`
+	CategoryID int32     `json:"category_id"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Log struct {
-	ID          int32
-	AccountID   sql.NullInt32
-	Action      string
-	TargetID    sql.NullInt32
-	Description sql.NullString
-	CreatedAt   sql.NullTime
+	ID          int32          `json:"id"`
+	AccountID   sql.NullInt32  `json:"account_id"`
+	Action      string         `json:"action"`
+	TargetID    sql.NullInt32  `json:"target_id"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
 }
 
 type Post struct {
-	ID         int32
-	PostID     string
-	Content    string
-	CreatedAt  time.Time
-	InsertedAt time.Time
-	GroupID    int32
-	IsAnalyzed bool
+	ID         int32     `json:"id"`
+	PostID     string    `json:"post_id"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+	InsertedAt time.Time `json:"inserted_at"`
+	GroupID    int32     `json:"group_id"`
+	IsAnalyzed bool      `json:"is_analyzed"`
 }
 
 type Prompt struct {
-	ID          int32
-	Content     string
-	ServiceName string
-	Version     int32
-	CreatedBy   string
-	CreatedAt   time.Time
+	ID          int32         `json:"id"`
+	Content     string        `json:"content"`
+	ServiceName string        `json:"service_name"`
+	Version     int32         `json:"version"`
+	CreatedBy   string        `json:"created_by"`
+	CreatedAt   time.Time     `json:"created_at"`
+	CategoryID  sql.NullInt32 `json:"category_id"`
 }
 
 type Proxy struct {
-	ID        int32
-	Ip        string
-	Port      string
-	Username  string
-	Password  string
-	IsActive  bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        int32     `json:"id"`
+	Ip        string    `json:"ip"`
+	Port      string    `json:"port"`
+	Username  string    `json:"username"`
+	Password  string    `json:"password"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Request struct {
-	ID           int32
-	Progress     float64
-	Status       int16
-	Description  sql.NullString
-	CreatedAt    sql.NullTime
-	UpdatedAt    sql.NullTime
-	ErrorMessage sql.NullString
+	ID           int32          `json:"id"`
+	Progress     float64        `json:"progress"`
+	Status       int16          `json:"status"`
+	Description  sql.NullString `json:"description"`
+	CreatedAt    sql.NullTime   `json:"created_at"`
+	UpdatedAt    sql.NullTime   `json:"updated_at"`
+	ErrorMessage sql.NullString `json:"error_message"`
 }
 
 type UserProfile struct {
-	ID                 int32
-	FacebookID         string
-	Name               sql.NullString
-	Bio                sql.NullString
-	Location           sql.NullString
-	Work               sql.NullString
-	Education          sql.NullString
-	RelationshipStatus sql.NullString
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ScrapedByID        int32
-	IsScanned          bool
-	Hometown           sql.NullString
-	Locale             string
-	Gender             sql.NullString
-	Birthday           sql.NullString
-	Email              sql.NullString
-	Phone              sql.NullString
-	ProfileUrl         string
-	IsAnalyzed         sql.NullBool
-	GeminiScore        sql.NullFloat64
-	ModelScore         sql.NullFloat64
+	ID                 int32           `json:"id"`
+	FacebookID         string          `json:"facebook_id"`
+	Name               sql.NullString  `json:"name"`
+	Bio                sql.NullString  `json:"bio"`
+	Location           sql.NullString  `json:"location"`
+	Work               sql.NullString  `json:"work"`
+	Education          sql.NullString  `json:"education"`
+	RelationshipStatus sql.NullString  `json:"relationship_status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	ScrapedByID        int32           `json:"scraped_by_id"`
+	IsScanned          bool            `json:"is_scanned"`
+	Hometown           sql.NullString  `json:"hometown"`
+	Locale             string          `json:"locale"`
+	Gender             sql.NullString  `json:"gender"`
+	Birthday           sql.NullString  `json:"birthday"`
+	Email              sql.NullString  `json:"email"`
+	Phone              sql.NullString  `json:"phone"`
+	ProfileUrl         string          `json:"profile_url"`
+	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
+	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
+	ModelScore         sql.NullFloat64 `json:"model_score"`
+}
+
+type UserProfileCategory struct {
+	UserProfileID int32     `json:"user_profile_id"`
+	CategoryID    int32     `json:"category_id"`
+	CreatedAt     time.Time `json:"created_at"`
 }

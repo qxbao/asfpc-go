@@ -14,6 +14,7 @@ import (
 	"github.com/qxbao/asfpc/pkg/utils/client"
 	"github.com/qxbao/asfpc/pkg/utils/facebook"
 	"github.com/qxbao/asfpc/pkg/utils/python"
+	db_util "github.com/qxbao/asfpc/pkg/utils/db"
 )
 
 type AccountRoutingService infras.RoutingService
@@ -367,12 +368,14 @@ func (s *AccountRoutingService) GetGroupsByAccountID(c echo.Context) error {
 		})
 	}
 
-	if groups == nil {
-		groups = make([]db.Group, 0)
+	// Convert to proper JSON	 response
+	result := make([]db_util.GroupWithCategories, 0, len(groups))
+	for _, group := range groups {
+		result = append(result, db_util.ConvertGroupRow(group))
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"data": groups,
+		"data": result,
 	})
 }
 

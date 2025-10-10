@@ -11,5 +11,6 @@ var RoutesModule = fx.Module(
 		InitMLRoutes,
 		InitSettingRoutes,
 		InitCronRoutes,
+		InitCategoryRoutes,
 	),
 )

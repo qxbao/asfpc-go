@@ -1,3 +1,5 @@
+-- +goose Up
+-- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS public.proxy
 (
     id SERIAL,
@@ -120,19 +122,6 @@ CREATE TABLE IF NOT EXISTS public.comment
         ON DELETE NO ACTION
 );
 
-CREATE TABLE IF NOT EXISTS public.image
-(
-    id SERIAL,
-    path character varying COLLATE pg_catalog."default" NOT NULL,
-    is_analyzed boolean NOT NULL,
-    belong_to_id integer NOT NULL,
-    CONSTRAINT image_pkey PRIMARY KEY (id),
-    CONSTRAINT image_belong_to_id_fkey FOREIGN KEY (belong_to_id)
-        REFERENCES public.user_profile (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-);
-
 CREATE TABLE IF NOT EXISTS public.prompt
 (
     id SERIAL,
@@ -145,37 +134,12 @@ CREATE TABLE IF NOT EXISTS public.prompt
     CONSTRAINT uq_service_name_version UNIQUE (service_name, version)
 );
 
-CREATE TABLE IF NOT EXISTS public.financial_analysis
-(
-    id SERIAL,
-    financial_status character varying COLLATE pg_catalog."default" NOT NULL,
-    confidence_score double precision NOT NULL,
-    analysis_summary text COLLATE pg_catalog."default" NOT NULL,
-    indicators json,
-    gemini_model_used character varying COLLATE pg_catalog."default" NOT NULL,
-    prompt_tokens_used integer,
-    prompt_used_id integer NOT NULL,
-    completion_tokens_used integer,
-    total_tokens_used integer,
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL,
-    user_profile_id integer NOT NULL,
-    CONSTRAINT financial_analysis_pkey PRIMARY KEY (id),
-    CONSTRAINT financial_analysis_prompt_used_id_fkey FOREIGN KEY (prompt_used_id)
-        REFERENCES public.prompt (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION,
-    CONSTRAINT financial_analysis_user_profile_id_fkey FOREIGN KEY (user_profile_id)
-        REFERENCES public.user_profile (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-);
-
 CREATE TABLE IF NOT EXISTS public.config
 (
     id SERIAL,
     key character varying COLLATE pg_catalog."default" NOT NULL,
     value character varying COLLATE pg_catalog."default" NOT NULL,
+    CONSTRAINT config_key_key UNIQUE (key),
     CONSTRAINT config_pkey PRIMARY KEY (id)
 );
 
@@ -210,13 +174,12 @@ CREATE TABLE IF NOT EXISTS public.embedded_profile
     embedding vector(1024),
     created_at timestamp without time zone DEFAULT now(),
     CONSTRAINT embedded_profile_pkey PRIMARY KEY (id),
+    CONSTRAINT embedded_profile_pid_key UNIQUE(pid),
     CONSTRAINT embedded_profile_pid_fk FOREIGN KEY (pid)
         REFERENCES public.user_profile (id) MATCH SIMPLE
         ON UPDATE CASCADE
-        ON DELETE CASCADE,
-	CONSTRAINT embedded_profile_pid_key UNIQUE(pid)
+        ON DELETE CASCADE
 );
--- / Status: 0 - Pending, 1 - In progress, 2 - Completed, 3 - Failed, 4 - Aborted
 CREATE TABLE IF NOT EXISTS public.request
 (
     id SERIAL,
@@ -228,3 +191,20 @@ CREATE TABLE IF NOT EXISTS public.request
     error_message text COLLATE pg_catalog."default",
     CONSTRAINT request_pkey PRIMARY KEY (id)
 )
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS public.request;
+DROP TABLE IF EXISTS public.embedded_profile;
+DROP TABLE IF EXISTS public.gemini_key;
+DROP TABLE IF EXISTS public.log;
+DROP TABLE IF EXISTS public.config;
+DROP TABLE IF EXISTS public.prompt;
+DROP TABLE IF EXISTS public.comment;
+DROP TABLE IF EXISTS public.user_profile;
+DROP TABLE IF EXISTS public.post;
+DROP TABLE IF EXISTS public."group";
+DROP TABLE IF EXISTS public.account;
+DROP TABLE IF EXISTS public.proxy;
+-- +goose StatementEnd

@@ -2,9 +2,17 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strings"
+
+	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
 )
+
+type GroupWithCategories struct {
+	db.GetGroupsByAccountIdRow
+	Categories json.RawMessage `json:"categories"`
+}
 
 func ToNullString(ptr *string) sql.NullString {
 	if ptr != nil {
@@ -65,4 +73,27 @@ func GetStringOrDefault(ptr *string, defaultValue string) string {
 		return *ptr
 	}
 	return defaultValue
+}
+
+func ConvertGroupRow(row db.GetGroupsByAccountIdRow) GroupWithCategories {
+	result := GroupWithCategories{
+		GetGroupsByAccountIdRow: row,
+	}
+
+	switch v := row.Categories.(type) {
+	case []byte:
+		result.Categories = json.RawMessage(v)
+	case string:
+		result.Categories = json.RawMessage(v)
+	case nil:
+		result.Categories = json.RawMessage(`[]`)
+	default:
+		if b, err := json.Marshal(v); err == nil {
+			result.Categories = b
+		} else {
+			result.Categories = json.RawMessage(`[]`)
+		}
+	}
+
+	return result
 }

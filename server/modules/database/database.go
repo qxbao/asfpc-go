@@ -22,6 +22,7 @@ func NewDatabase(lc fx.Lifecycle) (*sql.DB, error) {
 		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		pgUser, pgPassword, pgHost, pgPort, pgDBName,
 	)
+	print(dataSourceName)
 	database, err := sql.Open("postgres", dataSourceName)
 
 	if err != nil {

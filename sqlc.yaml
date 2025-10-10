@@ -9,8 +9,8 @@ overrides:
           type: "Vector"
 sql:
   - engine: "postgresql"
-    queries: "./infras/sql/query.sql"
-    schema: "./infras/sql/schema.sql"
+    queries: "./db/sql/query.sql"
+    schema: "./db/sql/schema.sql"
     gen:
       go:
         package: "db"

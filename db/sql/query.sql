@@ -51,6 +51,11 @@ INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
 VALUES ($1, $2, false, $3)
 RETURNING *;
 
+-- name: AddGroupCategory :exec
+INSERT INTO public.group_category (group_id, category_id)
+VALUES ($1, $2)
+ON CONFLICT (group_id, category_id) DO NOTHING;
+
 -- name: DeleteGroup :exec
 WITH deleted_posts AS (
   DELETE FROM public.post WHERE group_id = $1 RETURNING post.id
@@ -60,19 +65,19 @@ deleted_comments AS (
 )
 DELETE FROM public."group" WHERE "group".id = $1;
 
--- name: GetGroupById :one
-SELECT * FROM public."group" WHERE id = $1;
-
 -- name: GetGroupsByAccountId :many
-SELECT * FROM public."group" WHERE account_id = $1;
-
--- name: GetGroupByIdWithAccount :one
-SELECT g.*, a.password, a.email, a.username, a.access_token FROM public."group" g
-JOIN public.account a ON g.account_id = a.id
-WHERE g.id = $1;
+SELECT *, COALESCE((
+  SELECT json_agg(c) FROM public.category c
+  JOIN public.group_category gc ON c.id = gc.category_id
+  WHERE gc.group_id = g.id
+), '[]'::json) as categories FROM public."group" g WHERE account_id = $1;
 
 -- name: GetGroupsToScan :many
-SELECT g.*, a.access_token FROM public."group" g
+SELECT g.*, a.access_token, (
+  SELECT json_agg(c) FROM public.category c
+  JOIN public.group_category gc ON c.id = gc.category_id
+  WHERE gc.group_id = g.id
+) as categories FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.is_joined = true AND g.account_id = $1
 ORDER BY scanned_at ASC NULLS FIRST LIMIT $2;
@@ -89,36 +94,12 @@ ON CONFLICT (post_id) DO UPDATE SET
     id = EXCLUDED.id
 RETURNING *;
 
--- name: GetPostsToScan :many
-SELECT p.*, a.access_token FROM public.post p
-JOIN "group" g ON p.group_id = g.id
-JOIN account a ON g.account_id = a.id
-WHERE g.account_id = $1
-ORDER BY inserted_at ASC LIMIT $2;
-
--- name: GetPostById :one
-SELECT * FROM public.post WHERE id = $1;
-
--- name: GetPostByIdWithAccount :one
-SELECT p.*, a.password, a.email, a.username, a.access_token, a.id AS account_id FROM public.post p
-JOIN public."group" g ON p.group_id = g.id
-JOIN public.account a ON g.account_id = a.id
-WHERE p.id = $1;
-
 -- name: CreateComment :one
 INSERT INTO public.comment (post_id, comment_id, content, created_at, author_id, is_analyzed, inserted_at)
 VALUES ($1, $2, $3, $4, $5, false, NOW())
 ON CONFLICT (comment_id) DO UPDATE SET
     id = EXCLUDED.id
 RETURNING *;
-
--- name: GetCommentsToScan :many
-SELECT c.*, a.access_token FROM public.comment c
-JOIN public.post p ON c.post_id = p.id
-JOIN public."group" g ON p.group_id = g.id
-JOIN public.account a ON g.account_id = a.id
-WHERE c.is_analyzed = false AND g.account_id = $1
-ORDER BY c.inserted_at ASC LIMIT $2;
 
 -- name: CreateProfile :one
 INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, updated_at)
@@ -127,13 +108,14 @@ ON CONFLICT (facebook_id) DO UPDATE SET
     id = EXCLUDED.id
 RETURNING *;
 
--- name: GetProfileById :one
-SELECT * FROM public.user_profile WHERE id = $1;
+-- name: AddUserProfileCategory :exec
+INSERT INTO public.user_profile_category (user_profile_id, category_id)
+VALUES ($1, $2)
+ON CONFLICT (user_profile_id, category_id) DO NOTHING;
 
--- name: GetProfileByIdWithAccount :one
-SELECT up.*, a.password, a.email, a.username, a.access_token FROM public.user_profile up
-JOIN public.account a ON up.scraped_by_id = a.id
-WHERE up.id = $1;
+-- name: GetProfileById :one
+SELECT *, (SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id) as categories
+FROM public.user_profile up WHERE id = $1;
 
 -- name: GetProfilesToScan :many
 SELECT up.*, a.access_token, a.id as account_id
@@ -150,6 +132,7 @@ SELECT
   up.is_analyzed,
   up.gemini_score,
   up.model_score,
+  (SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id) as categories,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -447,8 +430,6 @@ ORDER BY ep.embedding <=> (
   )
 LIMIT $2;
 
--- Charts API Queries
-
 -- name: GetDashboardStats :one
 SELECT
   (SELECT COUNT(*) FROM public."group") AS total_groups,
@@ -516,3 +497,22 @@ FROM score_ranges sr
 LEFT JOIN gemini_counts gc ON sr.range = gc.score_range
 LEFT JOIN model_counts mc ON sr.range = mc.score_range
 ORDER BY sr.range;
+
+-- name: GetCategories :many
+SELECT * FROM public.category ORDER BY name;
+
+-- name: CreateCategory :one
+INSERT INTO public.category (name, description, created_at, updated_at)
+VALUES ($1, $2, NOW(), NOW())
+RETURNING *;
+
+-- name: DeleteCategory :exec
+DELETE FROM public.category WHERE id = $1;
+
+-- name: UpdateCategory :one
+UPDATE public.category
+SET name = $2,
+    description = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING *;
