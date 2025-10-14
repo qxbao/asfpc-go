@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/pkg/logger"
 )
 
 func (s *CategoryRoutingService) AddGroupCategory(c echo.Context) error {
@@ -55,6 +56,7 @@ func (s *CategoryRoutingService) GetGroupCategories(c echo.Context) error {
 	}
 
 	if categories == nil {
+		logger.GetLogger("CategoryService").Info("No categories found for group ID:", groupIdInt)
 		categories = make([]db.Category, 0)
 	}
 
