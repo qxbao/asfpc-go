@@ -37,13 +37,15 @@ func (s *CategoryRoutingService) AddGroupCategory(c echo.Context) error {
 
 func (s *CategoryRoutingService) GetGroupCategories(c echo.Context) error {
 	groupId := c.Param("id")
+	print("RAW GROUP ID:", groupId)
 	if groupId == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"error": "Invalid group ID",
 		})
 	}
-	groupIdInt, err := strconv.ParseInt(groupId, 32, 10)
 
+	groupIdInt, err := strconv.ParseInt(groupId, 10, 32)
+	print("PARSED GROUP ID:", groupIdInt)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"error": "Invalid group ID",

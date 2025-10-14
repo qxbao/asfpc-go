@@ -61,7 +61,7 @@ func (s *CategoryRoutingService) DeleteCategory(c echo.Context) error {
 			"error": "Invalid category ID",
 		})
 	}
-	categoryIdInt, err := strconv.ParseInt(categoryId, 32, 10)
+	categoryIdInt, err := strconv.ParseInt(categoryId, 10, 32)
 
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{
