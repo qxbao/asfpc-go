@@ -13,8 +13,11 @@ type PromptService struct {
 	Server *infras.Server
 }
 
-func (s *PromptService) GetPrompt(ctx context.Context, promptName string) (db.Prompt, error) {
-	prompt, err := s.Server.Queries.GetPrompt(ctx, promptName)
+func (s *PromptService) GetPrompt(ctx context.Context, promptName string, categoryId int32) (db.Prompt, error) {
+	prompt, err := s.Server.Queries.GetPrompt(ctx, db.GetPromptParams{
+		ServiceName: promptName,
+		CategoryID:  categoryId,
+	})
 	if err != nil {
 		return db.Prompt{}, fmt.Errorf("%v", err)
 	}

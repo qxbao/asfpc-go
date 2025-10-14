@@ -3,14 +3,27 @@ If (-not (Test-Path .env)) {
   exit 1
 }
 
+$success = 0
+
 Get-Content .env | foreach {
   If (($_ -match '^\s*#') -or ([string]::IsNullOrWhiteSpace($_))) {
     continue
   }
   $name, $value = $_.split('=', 2)
   Set-Item env:\$name $value
+  If ($?) {
+    $success++
+  }
+}
+
+If ($success -eq 0) {
+  Write-Host "Error: Failed to load .env file"
+  exit 1
 }
 
 Set-Item env:\GOOSE_DRIVER "postgres"
 Set-Item env:\GOOSE_DBSTRING "host=$env:POSTGRE_HOST port=$env:POSTGRE_PORT user=$env:POSTGRE_USER password=$env:POSTGRE_PASSWORD dbname=$env:POSTGRE_DBNAME sslmode=disable"
 Set-Item env:\GOOSE_MIGRATION_DIR "./db/migrations"
+$success += 3
+
+Write-Host "Loaded $success environment variables from .env file"

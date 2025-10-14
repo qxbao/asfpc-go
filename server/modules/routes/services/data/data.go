@@ -108,6 +108,7 @@ func (ds *DataRoutingService) CreatePrompt(c echo.Context) error {
 		ServiceName: dto.ServiceName,
 		Content:     dto.Content,
 		CreatedBy:   dto.CreatedBy,
+		CategoryID:  int32(dto.CategoryID),
 	})
 
 	if err != nil {
@@ -118,6 +119,48 @@ func (ds *DataRoutingService) CreatePrompt(c echo.Context) error {
 
 	return c.JSON(200, map[string]any{
 		"data": prompt,
+	})
+}
+
+func (ds *DataRoutingService) DeletePrompt(c echo.Context) error {
+	queries := ds.Server.Queries
+
+	dto := new(infras.DeletePromptRequest)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+	err := queries.DeletePrompt(c.Request().Context(), dto.ID)
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to delete prompt: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data": "Prompt deleted successfully",
+	})
+}
+
+func (ds *DataRoutingService) RollbackPrompt(c echo.Context) error {
+	queries := ds.Server.Queries
+	dto := new(infras.RollbackPromptRequest)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+	err := queries.RollbackPrompt(c.Request().Context(), db.RollbackPromptParams{
+		CategoryID:  dto.CategoryID,
+		ServiceName: dto.ServiceName,
+	})
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "failed to rollback prompt: " + err.Error(),
+		})
+	}
+	return c.JSON(200, map[string]any{
+		"data": "Prompt rolled back successfully",
 	})
 }
 

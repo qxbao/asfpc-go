@@ -13,6 +13,24 @@ import (
 	"github.com/lib/pq"
 )
 
+const addAllProfilesToCategory = `-- name: AddAllProfilesToCategory :execrows
+INSERT INTO public.user_profile_category (user_profile_id, category_id, created_at)
+SELECT up.id, $1, NOW()
+FROM public.user_profile up
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.user_profile_category upc
+    WHERE upc.user_profile_id = up.id AND upc.category_id = $1
+)
+`
+
+func (q *Queries) AddAllProfilesToCategory(ctx context.Context, categoryID int32) (int64, error) {
+	result, err := q.db.ExecContext(ctx, addAllProfilesToCategory, categoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const addGroupCategory = `-- name: AddGroupCategory :exec
 INSERT INTO public.group_category (group_id, category_id)
 VALUES ($1, $2)
@@ -270,7 +288,7 @@ INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is
 VALUES ($1, $2, $3, NOW(), $4, true)
 ON CONFLICT (post_id) DO UPDATE SET
     id = EXCLUDED.id
-RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed
+RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed, scanned_at
 `
 
 type CreatePostParams struct {
@@ -296,6 +314,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		&i.InsertedAt,
 		&i.GroupID,
 		&i.IsAnalyzed,
+		&i.ScannedAt,
 	)
 	return i, err
 }
@@ -348,10 +367,10 @@ const createPrompt = `-- name: CreatePrompt :one
 WITH next_version AS (
   SELECT COALESCE(MAX(version), 0) + 1 AS version
   FROM public.prompt
-  WHERE service_name = $1
+  WHERE service_name = $1 AND category_id = $4
 )
-INSERT INTO public.prompt (service_name, version, content, created_by, created_at)
-SELECT $1, next_version.version, $2, $3, NOW()
+INSERT INTO public.prompt (service_name, version, content, created_by, created_at, category_id)
+SELECT $1, next_version.version, $2, $3, NOW(), $4
 FROM next_version
 RETURNING id, content, service_name, version, created_by, created_at, category_id
 `
@@ -360,10 +379,16 @@ type CreatePromptParams struct {
 	ServiceName string `json:"service_name"`
 	Content     string `json:"content"`
 	CreatedBy   string `json:"created_by"`
+	CategoryID  int32  `json:"category_id"`
 }
 
 func (q *Queries) CreatePrompt(ctx context.Context, arg CreatePromptParams) (Prompt, error) {
-	row := q.db.QueryRowContext(ctx, createPrompt, arg.ServiceName, arg.Content, arg.CreatedBy)
+	row := q.db.QueryRowContext(ctx, createPrompt,
+		arg.ServiceName,
+		arg.Content,
+		arg.CreatedBy,
+		arg.CategoryID,
+	)
 	var i Prompt
 	err := row.Scan(
 		&i.ID,
@@ -432,6 +457,20 @@ func (q *Queries) DeleteGroup(ctx context.Context, id int32) error {
 	return err
 }
 
+const deleteGroupCategory = `-- name: DeleteGroupCategory :exec
+DELETE FROM public.group_category WHERE group_id = $1 AND category_id = $2
+`
+
+type DeleteGroupCategoryParams struct {
+	GroupID    int32 `json:"group_id"`
+	CategoryID int32 `json:"category_id"`
+}
+
+func (q *Queries) DeleteGroupCategory(ctx context.Context, arg DeleteGroupCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, deleteGroupCategory, arg.GroupID, arg.CategoryID)
+	return err
+}
+
 const deleteJunkProfiles = `-- name: DeleteJunkProfiles :one
 WITH non_null_count AS (
   SELECT up.id,
@@ -480,6 +519,18 @@ func (q *Queries) DeleteJunkProfiles(ctx context.Context) (int64, error) {
 	var deleted_count int64
 	err := row.Scan(&deleted_count)
 	return deleted_count, err
+}
+
+const deletePrompt = `-- name: DeletePrompt :exec
+WITH prompt_to_delete AS (
+  SELECT id, content, service_name, version, created_by, created_at, category_id FROM public.prompt d WHERE d.id = $1
+)
+DELETE FROM public.prompt WHERE service_name = (SELECT service_name FROM prompt_to_delete) AND category_id = (SELECT category_id FROM prompt_to_delete)
+`
+
+func (q *Queries) DeletePrompt(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, deletePrompt, id)
+	return err
 }
 
 const findSimilarProfiles = `-- name: FindSimilarProfiles :many
@@ -682,14 +733,14 @@ type GetAllPromptsParams struct {
 }
 
 type GetAllPromptsRow struct {
-	ID          int32         `json:"id"`
-	Content     string        `json:"content"`
-	ServiceName string        `json:"service_name"`
-	Version     int32         `json:"version"`
-	CreatedBy   string        `json:"created_by"`
-	CreatedAt   time.Time     `json:"created_at"`
-	CategoryID  sql.NullInt32 `json:"category_id"`
-	Rn          int64         `json:"rn"`
+	ID          int32     `json:"id"`
+	Content     string    `json:"content"`
+	ServiceName string    `json:"service_name"`
+	Version     int32     `json:"version"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	CategoryID  int32     `json:"category_id"`
+	Rn          int64     `json:"rn"`
 }
 
 func (q *Queries) GetAllPrompts(ctx context.Context, arg GetAllPromptsParams) ([]GetAllPromptsRow, error) {
@@ -755,6 +806,23 @@ func (q *Queries) GetCategories(ctx context.Context) ([]Category, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const getCategoryByID = `-- name: GetCategoryByID :one
+SELECT id, name, description, created_at, updated_at FROM public.category WHERE id = $1
+`
+
+func (q *Queries) GetCategoryByID(ctx context.Context, id int32) (Category, error) {
+	row := q.db.QueryRowContext(ctx, getCategoryByID, id)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getConfigByKey = `-- name: GetConfigByKey :one
@@ -864,29 +932,47 @@ func (q *Queries) GetGeminiKeys(ctx context.Context) ([]GeminiKey, error) {
 	return items, nil
 }
 
+const getGroupCategories = `-- name: GetGroupCategories :many
+SELECT c.id, c.name, c.description, c.created_at, c.updated_at FROM public.category c
+JOIN public.group_category gc ON c.id = gc.category_id
+WHERE gc.group_id = $1
+`
+
+func (q *Queries) GetGroupCategories(ctx context.Context, groupID int32) ([]Category, error) {
+	rows, err := q.db.QueryContext(ctx, getGroupCategories, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Category
+	for rows.Next() {
+		var i Category
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getGroupsByAccountId = `-- name: GetGroupsByAccountId :many
-SELECT 
-  g.id,
-  g.group_id,
-  g.group_name,
-  g.is_joined,
-  g.account_id,
-  g.scanned_at,
-  COALESCE(
-    (SELECT json_agg(json_build_object(
-      'id', c.id,
-      'name', c.name,
-      'description', c.description,
-      'created_at', c.created_at,
-      'updated_at', c.updated_at
-    )) 
-     FROM public.category c
-     JOIN public.group_category gc ON c.id = gc.category_id
-     WHERE gc.group_id = g.id),
-    '[]'::json
-  ) as categories 
-FROM public."group" g 
-WHERE g.account_id = $1
+SELECT id, group_id, group_name, is_joined, account_id, scanned_at, COALESCE((
+  SELECT json_agg(c) FROM public.category c
+  JOIN public.group_category gc ON c.id = gc.category_id
+  WHERE gc.group_id = g.id
+), '[]'::json)::jsonb as categories FROM public."group" g WHERE account_id = $1
 `
 
 type GetGroupsByAccountIdRow struct {
@@ -896,7 +982,7 @@ type GetGroupsByAccountIdRow struct {
 	IsJoined   bool          `json:"is_joined"`
 	AccountID  sql.NullInt32 `json:"account_id"`
 	ScannedAt  sql.NullTime  `json:"scanned_at"`
-	Categories interface{}   `json:"categories"`
+	Categories NullableJSON  `json:"categories"`
 }
 
 func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullInt32) ([]GetGroupsByAccountIdRow, error) {
@@ -931,31 +1017,14 @@ func (q *Queries) GetGroupsByAccountId(ctx context.Context, accountID sql.NullIn
 }
 
 const getGroupsToScan = `-- name: GetGroupsToScan :many
-SELECT 
-  g.id,
-  g.group_id,
-  g.group_name,
-  g.is_joined,
-  g.account_id,
-  g.scanned_at,
-  a.access_token,
-  COALESCE(
-    (SELECT json_agg(json_build_object(
-      'id', c.id,
-      'name', c.name,
-      'description', c.description,
-      'created_at', c.created_at,
-      'updated_at', c.updated_at
-    )) 
-     FROM public.category c
-     JOIN public.group_category gc ON c.id = gc.category_id
-     WHERE gc.group_id = g.id),
-    '[]'::json
-  ) as categories 
-FROM public."group" g
+SELECT g.id, g.group_id, g.group_name, g.is_joined, g.account_id, g.scanned_at, a.access_token, COALESCE((
+  SELECT json_agg(c) FROM public.category c
+  JOIN public.group_category gc ON c.id = gc.category_id
+  WHERE gc.group_id = g.id
+), '[]'::json)::jsonb as categories FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.is_joined = true AND g.account_id = $1
-ORDER BY g.scanned_at ASC NULLS FIRST LIMIT $2
+ORDER BY scanned_at ASC NULLS FIRST LIMIT $2
 `
 
 type GetGroupsToScanParams struct {
@@ -971,7 +1040,7 @@ type GetGroupsToScanRow struct {
 	AccountID   sql.NullInt32  `json:"account_id"`
 	ScannedAt   sql.NullTime   `json:"scanned_at"`
 	AccessToken sql.NullString `json:"access_token"`
-	Categories  interface{}    `json:"categories"`
+	Categories  NullableJSON   `json:"categories"`
 }
 
 func (q *Queries) GetGroupsToScan(ctx context.Context, arg GetGroupsToScanParams) ([]GetGroupsToScanRow, error) {
@@ -1093,44 +1162,8 @@ func (q *Queries) GetOKAccountIds(ctx context.Context) ([]int32, error) {
 }
 
 const getProfileById = `-- name: GetProfileById :one
-SELECT 
-  up.id,
-  up.facebook_id,
-  up.name,
-  up.bio,
-  up.location,
-  up.work,
-  up.education,
-  up.relationship_status,
-  up.created_at,
-  up.updated_at,
-  up.scraped_by_id,
-  up.is_scanned,
-  up.hometown,
-  up.locale,
-  up.gender,
-  up.birthday,
-  up.email,
-  up.phone,
-  up.profile_url,
-  up.is_analyzed,
-  up.gemini_score,
-  up.model_score,
-  COALESCE(
-    (SELECT json_agg(json_build_object(
-      'id', c.id,
-      'name', c.name,
-      'description', c.description,
-      'created_at', c.created_at,
-      'updated_at', c.updated_at
-    )) 
-     FROM public.category c
-     JOIN public.user_profile_category upc ON c.id = upc.category_id
-     WHERE upc.user_profile_id = up.id),
-    '[]'::json
-  ) as categories
-FROM public.user_profile up 
-WHERE up.id = $1
+SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score, COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json)::jsonb as categories
+FROM public.user_profile up WHERE id = $1
 `
 
 type GetProfileByIdRow struct {
@@ -1156,7 +1189,7 @@ type GetProfileByIdRow struct {
 	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
 	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
 	ModelScore         sql.NullFloat64 `json:"model_score"`
-	Categories         interface{}     `json:"categories"`
+	Categories         NullableJSON    `json:"categories"`
 }
 
 func (q *Queries) GetProfileById(ctx context.Context, id int32) (GetProfileByIdRow, error) {
@@ -1262,7 +1295,8 @@ func (q *Queries) GetProfileStats(ctx context.Context) (GetProfileStatsRow, erro
 }
 
 const getProfilesAnalysisCronjob = `-- name: GetProfilesAnalysisCronjob :many
-SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score,
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score,
+  ep.id as category_id,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -1275,6 +1309,7 @@ SELECT id, facebook_id, name, bio, location, work, education, relationship_statu
   (COALESCE(up.email, '') != '')::int +
   (COALESCE(up.phone, '') != '')::int AS non_null_count
 FROM public.user_profile up
+JOIN public.embedded_profile ep ON up.id = ep.user_profile_id
 WHERE up.is_scanned = true AND up.is_analyzed = false
 ORDER BY non_null_count DESC, up.updated_at ASC
 LIMIT $1
@@ -1303,6 +1338,7 @@ type GetProfilesAnalysisCronjobRow struct {
 	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
 	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
 	ModelScore         sql.NullFloat64 `json:"model_score"`
+	CategoryID         int32           `json:"category_id"`
 	NonNullCount       int32           `json:"non_null_count"`
 }
 
@@ -1338,6 +1374,7 @@ func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, limit int32) (
 			&i.IsAnalyzed,
 			&i.GeminiScore,
 			&i.ModelScore,
+			&i.CategoryID,
 			&i.NonNullCount,
 		); err != nil {
 			return nil, err
@@ -1361,20 +1398,8 @@ SELECT
   up.is_analyzed,
   up.gemini_score,
   up.model_score,
-  COALESCE(
-    (SELECT json_agg(json_build_object(
-      'id', c.id,
-      'name', c.name,
-      'description', c.description,
-      'created_at', c.created_at,
-      'updated_at', c.updated_at
-    )) 
-     FROM public.category c
-     JOIN public.user_profile_category upc ON c.id = upc.category_id
-     WHERE upc.user_profile_id = up.id),
-    '[]'::json
-  ) as categories,
-  (COALESCE(up.bio, '') != '')::int +
+  (COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json))::jsonb as categories,
+  ((COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
   (COALESCE(up.locale, '') != '')::int +
@@ -1384,10 +1409,10 @@ SELECT
   (COALESCE(up.gender, '') != '')::int +
   (COALESCE(up.birthday, '') != '')::int +
   (COALESCE(up.email, '') != '')::int +
-  (COALESCE(up.phone, '') != '')::int AS non_null_count
+  (COALESCE(up.phone, '') != '')::int)::int AS non_null_count
 FROM public.user_profile up
 WHERE up.is_scanned = true
-ORDER BY model_score DESC NULLS LAST, gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
+ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2
 `
 
@@ -1403,7 +1428,7 @@ type GetProfilesAnalysisPageRow struct {
 	IsAnalyzed   sql.NullBool    `json:"is_analyzed"`
 	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
 	ModelScore   sql.NullFloat64 `json:"model_score"`
-	Categories   interface{}     `json:"categories"`
+	Categories   NullableJSON    `json:"categories"`
 	NonNullCount int32           `json:"non_null_count"`
 }
 
@@ -1632,12 +1657,17 @@ func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProf
 
 const getPrompt = `-- name: GetPrompt :one
 SELECT id, content, service_name, version, created_by, created_at, category_id FROM public.prompt
-WHERE service_name = $1
+WHERE service_name = $1 AND category_id = $2
 ORDER BY version DESC LIMIT 1
 `
 
-func (q *Queries) GetPrompt(ctx context.Context, serviceName string) (Prompt, error) {
-	row := q.db.QueryRowContext(ctx, getPrompt, serviceName)
+type GetPromptParams struct {
+	ServiceName string `json:"service_name"`
+	CategoryID  int32  `json:"category_id"`
+}
+
+func (q *Queries) GetPrompt(ctx context.Context, arg GetPromptParams) (Prompt, error) {
+	row := q.db.QueryRowContext(ctx, getPrompt, arg.ServiceName, arg.CategoryID)
 	var i Prompt
 	err := row.Scan(
 		&i.ID,
@@ -1649,6 +1679,66 @@ func (q *Queries) GetPrompt(ctx context.Context, serviceName string) (Prompt, er
 		&i.CategoryID,
 	)
 	return i, err
+}
+
+const getPromptsByCategory = `-- name: GetPromptsByCategory :many
+SELECT id, content, service_name, version, created_by, created_at, category_id, rn
+FROM (
+  SELECT id, content, service_name, version, created_by, created_at, category_id, ROW_NUMBER() OVER (PARTITION BY service_name ORDER BY version DESC) AS rn
+  FROM public.prompt WHERE category_id = $3
+) t
+WHERE rn = 1
+ORDER BY service_name
+LIMIT $1 OFFSET $2
+`
+
+type GetPromptsByCategoryParams struct {
+	Limit      int32 `json:"limit"`
+	Offset     int32 `json:"offset"`
+	CategoryID int32 `json:"category_id"`
+}
+
+type GetPromptsByCategoryRow struct {
+	ID          int32     `json:"id"`
+	Content     string    `json:"content"`
+	ServiceName string    `json:"service_name"`
+	Version     int32     `json:"version"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	CategoryID  int32     `json:"category_id"`
+	Rn          int64     `json:"rn"`
+}
+
+func (q *Queries) GetPromptsByCategory(ctx context.Context, arg GetPromptsByCategoryParams) ([]GetPromptsByCategoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPromptsByCategory, arg.Limit, arg.Offset, arg.CategoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPromptsByCategoryRow
+	for rows.Next() {
+		var i GetPromptsByCategoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Content,
+			&i.ServiceName,
+			&i.Version,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.CategoryID,
+			&i.Rn,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRequestById = `-- name: GetRequestById :one
@@ -1928,6 +2018,25 @@ SET model_score = NULL
 
 func (q *Queries) ResetProfilesModelScore(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetProfilesModelScore)
+	return err
+}
+
+const rollbackPrompt = `-- name: RollbackPrompt :exec
+DELETE FROM public.prompt pr WHERE
+pr.service_name = $1 AND pr.category_id = $2
+AND pr.version = (
+  SELECT MAX(version) FROM public.prompt p
+  WHERE p.service_name = $1 AND p.category_id = $2
+)
+`
+
+type RollbackPromptParams struct {
+	ServiceName string `json:"service_name"`
+	CategoryID  int32  `json:"category_id"`
+}
+
+func (q *Queries) RollbackPrompt(ctx context.Context, arg RollbackPromptParams) error {
+	_, err := q.db.ExecContext(ctx, rollbackPrompt, arg.ServiceName, arg.CategoryID)
 	return err
 }
 

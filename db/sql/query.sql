@@ -51,10 +51,18 @@ INSERT INTO public."group" (group_id, group_name, is_joined, account_id)
 VALUES ($1, $2, false, $3)
 RETURNING *;
 
+-- name: GetGroupCategories :many
+SELECT c.* FROM public.category c
+JOIN public.group_category gc ON c.id = gc.category_id
+WHERE gc.group_id = $1;
+
 -- name: AddGroupCategory :exec
 INSERT INTO public.group_category (group_id, category_id)
 VALUES ($1, $2)
 ON CONFLICT (group_id, category_id) DO NOTHING;
+
+-- name: DeleteGroupCategory :exec
+DELETE FROM public.group_category WHERE group_id = $1 AND category_id = $2;
 
 -- name: DeleteGroup :exec
 WITH deleted_posts AS (
@@ -70,14 +78,14 @@ SELECT *, COALESCE((
   SELECT json_agg(c) FROM public.category c
   JOIN public.group_category gc ON c.id = gc.category_id
   WHERE gc.group_id = g.id
-), '[]'::json) as categories FROM public."group" g WHERE account_id = $1;
+), '[]'::json)::jsonb as categories FROM public."group" g WHERE account_id = $1;
 
 -- name: GetGroupsToScan :many
-SELECT g.*, a.access_token, (
+SELECT g.*, a.access_token, COALESCE((
   SELECT json_agg(c) FROM public.category c
   JOIN public.group_category gc ON c.id = gc.category_id
   WHERE gc.group_id = g.id
-) as categories FROM public."group" g
+), '[]'::json)::jsonb as categories FROM public."group" g
 JOIN public.account a ON g.account_id = a.id
 WHERE g.is_joined = true AND g.account_id = $1
 ORDER BY scanned_at ASC NULLS FIRST LIMIT $2;
@@ -114,7 +122,7 @@ VALUES ($1, $2)
 ON CONFLICT (user_profile_id, category_id) DO NOTHING;
 
 -- name: GetProfileById :one
-SELECT *, (SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id) as categories
+SELECT *, COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json)::jsonb as categories
 FROM public.user_profile up WHERE id = $1;
 
 -- name: GetProfilesToScan :many
@@ -132,8 +140,8 @@ SELECT
   up.is_analyzed,
   up.gemini_score,
   up.model_score,
-  (SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id) as categories,
-  (COALESCE(up.bio, '') != '')::int +
+  (COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json))::jsonb as categories,
+  ((COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
   (COALESCE(up.locale, '') != '')::int +
@@ -143,14 +151,15 @@ SELECT
   (COALESCE(up.gender, '') != '')::int +
   (COALESCE(up.birthday, '') != '')::int +
   (COALESCE(up.email, '') != '')::int +
-  (COALESCE(up.phone, '') != '')::int AS non_null_count
+  (COALESCE(up.phone, '') != '')::int)::int AS non_null_count
 FROM public.user_profile up
 WHERE up.is_scanned = true
-ORDER BY model_score DESC NULLS LAST, gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
+ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2;
 
 -- name: GetProfilesAnalysisCronjob :many
-SELECT *,
+SELECT up.*,
+  ep.id as category_id,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -163,6 +172,7 @@ SELECT *,
   (COALESCE(up.email, '') != '')::int +
   (COALESCE(up.phone, '') != '')::int AS non_null_count
 FROM public.user_profile up
+JOIN public.embedded_profile ep ON up.id = ep.user_profile_id
 WHERE up.is_scanned = true AND up.is_analyzed = false
 ORDER BY non_null_count DESC, up.updated_at ASC
 LIMIT $1;
@@ -316,7 +326,7 @@ SELECT COUNT(*) as deleted_count FROM deleted_profiles;
 
 -- name: GetPrompt :one
 SELECT * FROM public.prompt
-WHERE service_name = $1
+WHERE service_name = $1 AND category_id = $2
 ORDER BY version DESC LIMIT 1;
 
 -- name: GetAllPrompts :many
@@ -329,6 +339,16 @@ WHERE rn = 1
 ORDER BY service_name
 LIMIT $1 OFFSET $2;
 
+-- name: GetPromptsByCategory :many
+SELECT *
+FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY service_name ORDER BY version DESC) AS rn
+  FROM public.prompt WHERE category_id = $3
+) t
+WHERE rn = 1
+ORDER BY service_name
+LIMIT $1 OFFSET $2;
+
 -- name: CountPrompts :one
 SELECT COUNT(DISTINCT service_name) as total_prompt FROM public.prompt;
 
@@ -336,12 +356,26 @@ SELECT COUNT(DISTINCT service_name) as total_prompt FROM public.prompt;
 WITH next_version AS (
   SELECT COALESCE(MAX(version), 0) + 1 AS version
   FROM public.prompt
-  WHERE service_name = $1
+  WHERE service_name = $1 AND category_id = $4
 )
-INSERT INTO public.prompt (service_name, version, content, created_by, created_at)
-SELECT $1, next_version.version, $2, $3, NOW()
+INSERT INTO public.prompt (service_name, version, content, created_by, created_at, category_id)
+SELECT $1, next_version.version, $2, $3, NOW(), $4
 FROM next_version
 RETURNING *;
+
+-- name: DeletePrompt :exec
+WITH prompt_to_delete AS (
+  SELECT * FROM public.prompt d WHERE d.id = $1
+)
+DELETE FROM public.prompt WHERE service_name = (SELECT service_name FROM prompt_to_delete) AND category_id = (SELECT category_id FROM prompt_to_delete);
+
+-- name: RollbackPrompt :exec 
+DELETE FROM public.prompt pr WHERE
+pr.service_name = $1 AND pr.category_id = $2
+AND pr.version = (
+  SELECT MAX(version) FROM public.prompt p
+  WHERE p.service_name = $1 AND p.category_id = $2
+);
 
 -- name: GetAllConfigs :many
 SELECT * FROM public.config;
@@ -516,3 +550,15 @@ SET name = $2,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
+
+-- name: GetCategoryByID :one
+SELECT * FROM public.category WHERE id = $1;
+
+-- name: AddAllProfilesToCategory :execrows
+INSERT INTO public.user_profile_category (user_profile_id, category_id, created_at)
+SELECT up.id, $1, NOW()
+FROM public.user_profile up
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.user_profile_category upc
+    WHERE upc.user_profile_id = up.id AND upc.category_id = $1
+);

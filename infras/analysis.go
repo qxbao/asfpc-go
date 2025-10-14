@@ -16,12 +16,16 @@ type GeminiScoringTaskInput struct {
 }
 
 type GeminiEmbeddingTaskInput struct {
-	Ctx     context.Context
-	Id      int32
-	Ps      python.PythonService
+	Ctx context.Context
+	Id  int32
+	Ps  python.PythonService
 }
 
 type FindSimilarProfilesDTO struct {
-	ProfileID *int32   `query:"profile_id" validate:"required"`
-	TopK      *int32   `query:"top_k" validate:"min=1,max=20"`
+	ProfileID *int32 `query:"profile_id" validate:"required"`
+	TopK      *int32 `query:"top_k" validate:"min=1,max=20"`
+}
+
+type AddAllProfilesToCategoryDTO struct {
+	CategoryID *int32 `json:"category_id" validate:"required"`
 }

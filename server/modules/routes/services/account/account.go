@@ -2,6 +2,7 @@ package account
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,10 +12,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
+	"github.com/qxbao/asfpc/pkg/logger"
 	"github.com/qxbao/asfpc/pkg/utils/client"
+	db_util "github.com/qxbao/asfpc/pkg/utils/db"
 	"github.com/qxbao/asfpc/pkg/utils/facebook"
 	"github.com/qxbao/asfpc/pkg/utils/python"
-	db_util "github.com/qxbao/asfpc/pkg/utils/db"
 )
 
 type AccountRoutingService infras.RoutingService
@@ -307,7 +309,6 @@ func (s *AccountRoutingService) JoinGroup(c echo.Context) error {
 	})
 }
 
-
 func (s *AccountRoutingService) CreateGroup(c echo.Context) error {
 	queries := s.Server.Queries
 	dto := new(infras.CreateGroupDTO)
@@ -343,19 +344,26 @@ func (s *AccountRoutingService) CreateGroup(c echo.Context) error {
 }
 
 func (s *AccountRoutingService) GetGroupsByAccountID(c echo.Context) error {
+	log := logger.GetLogger("GetGroupsByAccountID")
+	log.Info("Starting GetGroupsByAccountID request")
+
 	queries := s.Server.Queries
 	dto := new(infras.GetGroupsByAccountIDDTO)
 	if err := c.Bind(dto); err != nil {
+		log.Errorf("Failed to bind request: %v", err)
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"error": "Invalid request body",
 		})
 	}
 
 	if dto.AccountID == 0 {
+		log.Warn("AccountID is missing or zero")
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"error": "AccountID is required",
 		})
 	}
+
+	log.Infof("Fetching groups for account_id=%d", dto.AccountID)
 
 	groups, err := queries.GetGroupsByAccountId(c.Request().Context(), sql.NullInt32{
 		Int32: dto.AccountID,
@@ -363,16 +371,43 @@ func (s *AccountRoutingService) GetGroupsByAccountID(c echo.Context) error {
 	})
 
 	if err != nil {
+		log.Errorf("Failed to get groups from DB: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]any{
 			"error": "Failed to retrieve groups: " + err.Error(),
 		})
 	}
 
-	// Convert to proper JSON	 response
-	result := make([]db_util.GroupWithCategories, 0, len(groups))
-	for _, group := range groups {
-		result = append(result, db_util.ConvertGroupRow(group))
+	log.Infof("Retrieved %d groups from database", len(groups))
+
+	// Log the first group's categories to debug
+	if len(groups) > 0 {
+		log.Infof("First group: ID=%d, GroupID=%s, Categories length=%d, Categories=%s",
+			groups[0].ID, groups[0].GroupID, len(groups[0].Categories), string(groups[0].Categories))
 	}
+
+	// Convert to proper JSON response
+	result := make([]db_util.GroupWithCategories, 0, len(groups))
+	for i, group := range groups {
+		converted := db_util.ConvertGroupRow(group)
+		log.Infof("Group %d: ID=%d, Categories after conversion: %s", i, converted.ID, string(converted.Categories))
+		result = append(result, converted)
+	}
+
+	log.Info("About to return JSON response")
+
+	// Try to marshal manually to see if there's an error
+	jsonBytes, err := json.Marshal(map[string]any{
+		"data": result,
+	})
+	if err != nil {
+		log.Errorf("Failed to marshal JSON response: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]any{
+			"error": "failed to marshal response: " + err.Error(),
+		})
+	}
+
+	log.Infof("Successfully marshaled JSON, size: %d bytes", len(jsonBytes))
+	log.Info("Returning response")
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"data": result,
@@ -401,7 +436,7 @@ func (s *AccountRoutingService) DeleteGroup(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"message":  "Group deleted successfully",
-		"data": dto.GroupID,
+		"message": "Group deleted successfully",
+		"data":    dto.GroupID,
 	})
 }

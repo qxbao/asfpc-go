@@ -12,7 +12,10 @@ func InitCategoryRoutes(s *infras.Server) {
 	}
 	
 	e.GET("/category/list", services.GetCategories)
+	e.GET("/category/group/:id", services.GetGroupCategories)
 	e.POST("/category/add", services.AddCategory)
+	e.POST("/category/group", services.AddGroupCategory)
+	e.DELETE("/category/group", services.DeleteGroupCategory)
 	e.DELETE("/category/delete/:id", services.DeleteCategory)
 	e.PUT("/category/assign", services.UpdateCategory)
 }

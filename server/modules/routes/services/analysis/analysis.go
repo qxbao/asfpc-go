@@ -1,29 +1,26 @@
 package analysis
 
 import (
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
 	"github.com/qxbao/asfpc/infras"
-	"github.com/qxbao/asfpc/pkg/generative"
 	"github.com/qxbao/asfpc/pkg/logger"
-	"github.com/qxbao/asfpc/pkg/utils/prompt"
 )
-
-
 
 type AnalysisRoutingService infras.RoutingService
 
 func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
+	log := logger.GetLogger("GetProfiles")
+	log.Info("Starting GetProfiles request")
+
 	queries := as.Server.Queries
 	dto := new(infras.QueryWithPageDTO)
 
 	if err := c.Bind(dto); err != nil {
+		log.Errorf("Failed to bind request: %v", err)
 		return c.JSON(400, map[string]any{
 			"error": "Invalid request body",
 		})
@@ -39,27 +36,58 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 		*dto.Limit = 10
 	}
 
+	log.Infof("Fetching profiles with limit=%d, offset=%d", *dto.Limit, *dto.Page**dto.Limit)
+
 	profiles, err := queries.GetProfilesAnalysisPage(c.Request().Context(), db.GetProfilesAnalysisPageParams{
 		Limit:  *dto.Limit,
 		Offset: *dto.Page * *dto.Limit,
 	})
 
 	if err != nil {
+		log.Errorf("Failed to get profiles from DB: %v", err)
 		return c.JSON(500, map[string]any{
 			"error": "failed to get profiles: " + err.Error(),
 		})
 	}
 
+	log.Infof("Retrieved %d profiles from database", len(profiles))
+
+	// Log the first profile's categories to debug
+	if len(profiles) > 0 {
+		log.Infof("First profile: ID=%d, FacebookID=%s, Categories length=%d, Categories=%s",
+			profiles[0].ID, profiles[0].FacebookID, len(profiles[0].Categories), string(profiles[0].Categories))
+	}
+
 	count, err := queries.CountProfiles(c.Request().Context())
 	if err != nil {
+		log.Errorf("Failed to count profiles: %v", err)
 		return c.JSON(500, map[string]any{
 			"error": "failed to count profiles: " + err.Error(),
 		})
 	}
 
+	log.Infof("Total profile count: %d", count)
+
 	if profiles == nil {
 		profiles = make([]db.GetProfilesAnalysisPageRow, 0)
 	}
+
+	log.Info("About to return JSON response")
+
+	// Try to marshal manually to see if there's an error
+	jsonBytes, err := json.Marshal(map[string]any{
+		"total": count,
+		"data":  profiles,
+	})
+	if err != nil {
+		log.Errorf("Failed to marshal JSON response: %v", err)
+		return c.JSON(500, map[string]any{
+			"error": "failed to marshal response: " + err.Error(),
+		})
+	}
+
+	log.Infof("Successfully marshaled JSON, size: %d bytes", len(jsonBytes))
+	log.Info("Returning response")
 
 	return c.JSON(200, map[string]any{
 		"total": count,
@@ -77,120 +105,6 @@ func (as *AnalysisRoutingService) GetProfileStats(c echo.Context) error {
 	}
 	return c.JSON(200, map[string]any{
 		"data": stats,
-	})
-}
-
-func (as *AnalysisRoutingService) AnalyzeProfileWithGemini(c echo.Context) error {
-	dto := new(infras.AnalyzeProfileRequest)
-	if err := c.Bind(dto); err != nil {
-		return c.JSON(400, map[string]any{
-			"error": "Invalid request body",
-		})
-	}
-
-	profile, err := as.Server.Queries.GetProfileById(c.Request().Context(), dto.ProfileID)
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get profile: " + err.Error(),
-		})
-	}
-
-	apiKey, err := as.Server.Queries.GetGeminiKeyForUse(c.Request().Context())
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get gemini key: " + err.Error(),
-		})
-	}
-
-	generativeService := generative.GetGenerativeService(apiKey.ApiKey, "gemini-2.5-flash-lite")
-
-	err = generativeService.Init()
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to initialize generative service: " + err.Error(),
-		})
-	}
-
-	promptService := prompt.PromptService{Server: as.Server}
-
-	prompt, err := promptService.GetPrompt(c.Request().Context(), "gemini-preprocess-1")
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get prompt (gemini-preprocess-1): " + err.Error(),
-		})
-	}
-
-	businessDesc, err := promptService.GetPrompt(c.Request().Context(), "business-description")
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get prompt (business-description): " + err.Error(),
-		})
-	}
-
-	promptContent := prompt.Content
-
-	promptContent = promptService.ReplacePrompt(promptContent,
-		businessDesc.Content,
-		profile.Name.String,
-		profile.Location.String,
-		profile.Work.String,
-		profile.Bio.String,
-		profile.Education.String,
-		profile.RelationshipStatus.String,
-		profile.Hometown.String,
-		profile.Locale,
-		profile.Gender.String,
-		profile.Birthday.String,
-	)
-
-	response, err := generativeService.GenerateText(promptContent)
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to generate text: " + err.Error(),
-		})
-	}
-
-	err = generativeService.SaveUsage(c.Request().Context(), as.Server.Queries)
-
-	if err != nil {
-		as.Server.Queries.LogAction(c.Request().Context(), db.LogActionParams{
-			Action: "profile_gemini_analysis",
-			Description: sql.NullString{
-				String: fmt.Sprintf("Failed to save usage: %v", err.Error()),
-				Valid:  true,
-			},
-			TargetID:  sql.NullInt32{Int32: profile.ID, Valid: true},
-			AccountID: sql.NullInt32{Int32: 0, Valid: false},
-		})
-	}
-
-	score, err := strconv.ParseFloat(response, 64)
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to parse score: " + err.Error(),
-		})
-	}
-
-	updatedProfile, err := as.Server.Queries.UpdateGeminiAnalysisProfile(c.Request().Context(), db.UpdateGeminiAnalysisProfileParams{
-		ID:          profile.ID,
-		GeminiScore: sql.NullFloat64{Float64: score, Valid: true},
-	})
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to update profile: " + err.Error(),
-		})
-	}
-
-	return c.JSON(200, map[string]any{
-		"data": updatedProfile.Float64,
 	})
 }
 
@@ -390,8 +304,8 @@ func (as *AnalysisRoutingService) FindSimilarProfiles(c echo.Context) error {
 	}
 
 	similarProfiles, err := as.Server.Queries.FindSimilarProfiles(c.Request().Context(), db.FindSimilarProfilesParams{
-		Pid:      	*dto.ProfileID,
-		Limit:      *dto.TopK,
+		Pid:   *dto.ProfileID,
+		Limit: *dto.TopK,
 	})
 
 	if err != nil {
@@ -404,5 +318,47 @@ func (as *AnalysisRoutingService) FindSimilarProfiles(c echo.Context) error {
 
 	return c.JSON(200, map[string]any{
 		"data": similarProfiles,
+	})
+}
+
+func (as *AnalysisRoutingService) AddAllProfilesToCategory(c echo.Context) error {
+	log := logger.GetLogger("AddAllProfilesToCategory")
+
+	dto := new(infras.AddAllProfilesToCategoryDTO)
+	if err := c.Bind(dto); err != nil {
+		log.Errorf("Failed to bind request: %v", err)
+		return c.JSON(400, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+
+	if dto.CategoryID == nil {
+		return c.JSON(400, map[string]any{
+			"error": "category_id is required",
+		})
+	}
+
+	// Check if category exists
+	_, err := as.Server.Queries.GetCategoryByID(c.Request().Context(), *dto.CategoryID)
+	if err != nil {
+		log.Errorf("Category not found: %v", err)
+		return c.JSON(404, map[string]any{
+			"error": "Category not found",
+		})
+	}
+
+	// Add all profiles to the category
+	rowsAffected, err := as.Server.Queries.AddAllProfilesToCategory(c.Request().Context(), *dto.CategoryID)
+	if err != nil {
+		log.Errorf("Failed to add profiles to category: %v", err)
+		return c.JSON(500, map[string]any{
+			"error": "Failed to add profiles to category: " + err.Error(),
+		})
+	}
+
+	log.Infof("Successfully added %d profiles to category ID %d", rowsAffected, *dto.CategoryID)
+
+	return c.JSON(200, map[string]any{
+		"data": rowsAffected,
 	})
 }

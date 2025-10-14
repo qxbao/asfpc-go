@@ -14,6 +14,17 @@ type GroupWithCategories struct {
 	Categories json.RawMessage `json:"categories"`
 }
 
+type ProfileAnalysisRow struct {
+	ID           int32           `json:"id"`
+	FacebookID   string          `json:"facebook_id"`
+	Name         sql.NullString  `json:"name"`
+	IsAnalyzed   sql.NullBool    `json:"is_analyzed"`
+	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
+	ModelScore   sql.NullFloat64 `json:"model_score"`
+	Categories   json.RawMessage `json:"categories"`
+	NonNullCount int32           `json:"non_null_count"`
+}
+
 func ToNullString(ptr *string) sql.NullString {
 	if ptr != nil {
 		return sql.NullString{String: *ptr, Valid: true}
@@ -80,18 +91,43 @@ func ConvertGroupRow(row db.GetGroupsByAccountIdRow) GroupWithCategories {
 		GetGroupsByAccountIdRow: row,
 	}
 
-	switch v := row.Categories.(type) {
-	case []byte:
-		result.Categories = json.RawMessage(v)
-	case string:
-		result.Categories = json.RawMessage(v)
-	case nil:
-		result.Categories = json.RawMessage(`[]`)
-	default:
-		if b, err := json.Marshal(v); err == nil {
-			result.Categories = b
+	if len(row.Categories) == 0 {
+		result.Categories = json.RawMessage([]byte("[]"))
+	} else {
+		var test any
+		if err := json.Unmarshal(row.Categories, &test); err != nil {
+			result.Categories = json.RawMessage([]byte("[]"))
 		} else {
-			result.Categories = json.RawMessage(`[]`)
+			result.Categories = json.RawMessage(row.Categories)
+		}
+	}
+
+	return result
+}
+
+func ConvertProfileAnalysisRow(row db.GetProfilesAnalysisPageRow) ProfileAnalysisRow {
+	result := ProfileAnalysisRow{
+		ID:           row.ID,
+		FacebookID:   row.FacebookID,
+		Name:         row.Name,
+		IsAnalyzed:   row.IsAnalyzed,
+		GeminiScore:  row.GeminiScore,
+		ModelScore:   row.ModelScore,
+		NonNullCount: row.NonNullCount,
+	}
+
+	// row.Categories is already db.NullableJSON which handles NULL by converting to []
+	// NullableJSON is []byte, so we can directly convert to json.RawMessage
+	if len(row.Categories) == 0 {
+		result.Categories = json.RawMessage([]byte("[]"))
+	} else {
+		// Validate that it's valid JSON before converting
+		var test interface{}
+		if err := json.Unmarshal(row.Categories, &test); err != nil {
+			// Invalid JSON, use empty array
+			result.Categories = json.RawMessage([]byte("[]"))
+		} else {
+			result.Categories = json.RawMessage(row.Categories)
 		}
 	}
 

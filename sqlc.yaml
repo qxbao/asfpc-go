@@ -6,7 +6,12 @@ overrides:
         nullable: true
         engine: "postgresql"
         go_type:
+          import: "github.com/qxbao/asfpc/db"
           type: "Vector"
+      - db_type: "jsonb"
+        engine: "postgresql"
+        go_type:
+          type: "NullableJSON"
 sql:
   - engine: "postgresql"
     queries: "./db/sql/query.sql"
@@ -15,3 +20,5 @@ sql:
       go:
         package: "db"
         out: "db"
+        emit_json_tags: true
+        json_tags_case_style: snake

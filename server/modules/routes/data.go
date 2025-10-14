@@ -14,6 +14,8 @@ func InitDataRoutes(s *infras.Server) {
 	e.GET("/data/log/list", services.GetLogs)
 	e.GET("/data/request/:request_id", services.TraceRequest)
 	e.POST("/data/prompt/add", services.CreatePrompt)
+	e.POST("/data/prompt/rollback", services.RollbackPrompt)
+	e.DELETE("/data/prompt/delete", services.DeletePrompt)
 
 	// Charts API endpoints
 	e.GET("/data/chart/dashboard", services.GetDashboardStats)

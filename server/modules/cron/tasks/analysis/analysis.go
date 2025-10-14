@@ -93,44 +93,39 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 		return
 	}
 
+	semaphore := async.GetSemaphore[infras.GeminiScoringTaskInput, bool](15)
 	promptService := prompt.PromptService{Server: as.Server}
 
-	prompt, err := promptService.GetPrompt(ctx, "gemini-preprocess-1")
-
-	if err != nil {
-		as.Server.Queries.LogAction(ctx, db.LogActionParams{
-			Action: "gemini_scoring_cronjob",
-			Description: sql.NullString{
-				String: fmt.Sprintf("Failed to get prompt (gemini-preprocess-1): %v", err.Error()),
-				Valid:  true,
-			},
-			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
-			AccountID: sql.NullInt32{Int32: 0, Valid: false},
-		})
-		logger.Errorf("Failed to get profiles: %v", err.Error())
-		return
-	}
-
-	businessDesc, err := promptService.GetPrompt(ctx, "business-description")
-
-	if err != nil {
-		as.Server.Queries.LogAction(ctx, db.LogActionParams{
-			Action: "gemini_scoring_cronjob",
-			Description: sql.NullString{
-				String: fmt.Sprintf("Failed to get prompt (business-description): %v", err.Error()),
-				Valid:  true,
-			},
-			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
-			AccountID: sql.NullInt32{Int32: 0, Valid: false},
-		})
-		logger.Errorf("Failed to get profiles: %v", err.Error())
-		return
-	}
-
-	semaphore := async.GetSemaphore[infras.GeminiScoringTaskInput, bool](15)
-
 	for _, profile := range profiles {
-		profilePromptContent := promptService.ReplacePrompt(prompt.Content,
+		pr, err := promptService.GetPrompt(ctx, "gemini-preprocess-1", profile.CategoryID)
+		if err != nil {
+			as.Server.Queries.LogAction(ctx, db.LogActionParams{
+				Action: "gemini_scoring_cronjob",
+				Description: sql.NullString{
+					String: fmt.Sprintf("Failed to get prompt (gemini-preprocess-1): %v", err.Error()),
+					Valid:  true,
+				},
+				TargetID:  sql.NullInt32{Int32: 0, Valid: false},
+				AccountID: sql.NullInt32{Int32: 0, Valid: false},
+			})
+			logger.Errorf("Failed to get profiles: %v", err.Error())
+			return
+		}
+		businessDesc, err := promptService.GetPrompt(ctx, "business-description", profile.CategoryID)
+		if err != nil {
+			as.Server.Queries.LogAction(ctx, db.LogActionParams{
+				Action: "gemini_scoring_cronjob",
+				Description: sql.NullString{
+					String: fmt.Sprintf("Failed to get prompt (business-description): %v", err.Error()),
+					Valid:  true,
+				},
+				TargetID:  sql.NullInt32{Int32: 0, Valid: false},
+				AccountID: sql.NullInt32{Int32: 0, Valid: false},
+			})
+			logger.Errorf("Failed to get profiles: %v", err.Error())
+			return
+		}
+		profilePromptContent := promptService.ReplacePrompt(pr.Content,
 			businessDesc.Content,
 			profile.Name.String,
 			profile.Location.String,
@@ -249,14 +244,6 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 
 	if len(profiles) == 0 {
 		logger.Info("No profiles to embed. Exiting cronjob.")
-		return
-	}
-
-	ps := prompt.PromptService{Server: as.Server}
-	_, err = ps.GetPrompt(ctx, "self-embedding")
-
-	if err != nil {
-		logger.Errorf("Failed to get prompt (self-embedding): %v", err)
 		return
 	}
 

@@ -47,16 +47,27 @@ func SeedData(logger zap.SugaredLogger, queries *db.Queries) {
 			logger.Error("Failed to upsert config:", err)
 		}
 	}
+
+	categories, err := queries.GetCategories(ctx)
+	if err != nil {
+		logger.Error("Failed to get categories:", err)
+		return
+	}
 	for name, content := range seed.Prompts {
-		_, err := queries.GetPrompt(ctx, name)
-		if err == nil {
-			continue
+		for _, c := range categories {
+			_, err := queries.GetPrompt(ctx, db.GetPromptParams{
+				ServiceName: name,
+				CategoryID:  c.ID,
+			})
+			if err == nil {
+				continue
+			}
+			_, _ = queries.CreatePrompt(ctx, db.CreatePromptParams{
+				ServiceName: name,
+				Content:     content,
+				CreatedBy:   "system",
+			})
 		}
-		_, _ = queries.CreatePrompt(ctx, db.CreatePromptParams{
-			ServiceName: name,
-			Content:     content,
-			CreatedBy:   "system",
-		})
 	}
 	logger.Info("Seed data generated successfully")
 }
