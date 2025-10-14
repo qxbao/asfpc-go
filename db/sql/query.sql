@@ -140,7 +140,12 @@ SELECT
   up.is_analyzed,
   up.gemini_score,
   up.model_score,
-  (COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json))::jsonb as categories,
+  (COALESCE((
+    SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'description', c.description))
+    FROM public.user_profile_category upc
+    JOIN public.category c ON c.id = upc.category_id
+    WHERE upc.user_profile_id = up.id
+  ), '[]'::json))::jsonb as categories,
   ((COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -159,7 +164,7 @@ LIMIT $1 OFFSET $2;
 
 -- name: GetProfilesAnalysisCronjob :many
 SELECT up.*,
-  ep.id as category_id,
+  upc.category_id,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -172,10 +177,11 @@ SELECT up.*,
   (COALESCE(up.email, '') != '')::int +
   (COALESCE(up.phone, '') != '')::int AS non_null_count
 FROM public.user_profile up
-JOIN public.embedded_profile ep ON up.id = ep.user_profile_id
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
 WHERE up.is_scanned = true AND up.is_analyzed = false
+AND upc.category_id = $1
 ORDER BY non_null_count DESC, up.updated_at ASC
-LIMIT $1;
+LIMIT $2;
 
 -- name: GetProfileStats :one
 SELECT
@@ -186,10 +192,13 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles;
 
 -- name: GetProfileIDForEmbedding :many
-SELECT id FROM public.user_profile
-WHERE id NOT IN (
+SELECT up.id FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.id NOT IN (
   SELECT pid FROM public.embedded_profile
-) AND is_scanned = true LIMIT $1;
+) AND up.is_scanned = true 
+AND upc.category_id = $1
+LIMIT $2;
 
 -- name: CreateEmbeddedProfile :one
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
@@ -251,8 +260,10 @@ JOIN public.embedded_profile ep ON up.id = ep.pid;
 -- name: GetProfilesForScoring :many
 SELECT up.id FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid
-WHERE is_scanned = true AND model_score IS NULL
-LIMIT $1;
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.is_scanned = true AND up.model_score IS NULL
+AND upc.category_id = $1
+LIMIT $2;
 
 -- name: UpdateModelScore :exec
 UPDATE public.user_profile
@@ -554,11 +565,38 @@ RETURNING *;
 -- name: GetCategoryByID :one
 SELECT * FROM public.category WHERE id = $1;
 
+-- name: CountProfilesInCategory :one
+SELECT COUNT(*) FROM public.user_profile_category WHERE category_id = $1;
+
 -- name: AddAllProfilesToCategory :execrows
 INSERT INTO public.user_profile_category (user_profile_id, category_id, created_at)
 SELECT up.id, $1, NOW()
 FROM public.user_profile up
-WHERE NOT EXISTS (
+WHERE up.is_scanned = true
+AND NOT EXISTS (
     SELECT 1 FROM public.user_profile_category upc
     WHERE upc.user_profile_id = up.id AND upc.category_id = $1
 );
+
+-- Model Configuration queries for category-specific ML models
+-- name: GetMLModelConfig :one
+SELECT * FROM public.config 
+WHERE key = 'ml_model_path_category_' || $1::text;
+
+-- name: SetMLModelConfig :exec
+INSERT INTO public.config (key, value)
+VALUES ('ml_model_path_category_' || $1::text, $2)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- name: GetEmbeddingModelConfig :one
+SELECT * FROM public.config 
+WHERE key = 'embedding_model_category_' || $1::text;
+
+-- name: SetEmbeddingModelConfig :exec
+INSERT INTO public.config (key, value)
+VALUES ('embedding_model_category_' || $1::text, $2)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- name: GetCategoryMLConfigs :many
+SELECT * FROM public.config 
+WHERE key LIKE 'ml_model_path_category_%' OR key LIKE 'embedding_model_category_%';

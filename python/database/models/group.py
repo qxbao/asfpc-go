@@ -9,6 +9,7 @@ from .base import Base
 
 if TYPE_CHECKING:
   from .account import Account
+  from .category import Category
   from .post import Post
 
 
@@ -36,6 +37,9 @@ class Group(Base):
     back_populates="groups", lazy="selectin"
   )
   posts: Mapped[list["Post"]] = relationship(back_populates="group")
+  categories: Mapped[list["Category"]] = relationship(
+    secondary="group_category", back_populates="groups"
+  )
   __table_args__ = (
     UniqueConstraint("group_id", "account_id", name="uq_group_account"),
   )

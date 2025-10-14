@@ -52,11 +52,25 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 
 	log.Infof("Retrieved %d profiles from database", len(profiles))
 
-	// Log the first profile's categories to debug
-	if len(profiles) > 0 {
-		log.Infof("First profile: ID=%d, FacebookID=%s, Categories length=%d, Categories=%s",
-			profiles[0].ID, profiles[0].FacebookID, len(profiles[0].Categories), string(profiles[0].Categories))
+	// Count total profiles in category 1 for debugging
+	categoryCount, err := queries.CountProfilesInCategory(c.Request().Context(), 1)
+	if err != nil {
+		log.Errorf("Failed to count profiles in category: %v", err)
+	} else {
+		log.Infof("Total profiles in category 1: %d", categoryCount)
 	}
+
+	// Log the first few profiles' categories to debug
+	categoriesFound := 0
+	for i := 0; i < len(profiles) && i < 10; i++ {
+		categoriesStr := string(profiles[i].Categories)
+		if categoriesStr != "[]" && categoriesStr != "" {
+			categoriesFound++
+			log.Infof("Profile %d (ID=%d, FacebookID=%s): Categories=%s",
+				i, profiles[i].ID, profiles[i].FacebookID, categoriesStr)
+		}
+	}
+	log.Infof("Found %d profiles with categories in first 10 results", categoriesFound)
 
 	count, err := queries.CountProfiles(c.Request().Context())
 	if err != nil {

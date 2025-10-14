@@ -8,9 +8,9 @@ from .base import Base
 
 if TYPE_CHECKING:
   from .account import Account
+  from .category import Category
   from .comment import Comment
   from .emb_profile import EmbeddedProfile
-  from .image import Image
 
 
 class UserProfile(Base):
@@ -44,11 +44,13 @@ class UserProfile(Base):
   )
   scraped_by_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
   scraped_by: Mapped["Account"] = relationship(back_populates="scraped_profiles")
-  images: Mapped[list["Image"]] = relationship(back_populates="belong_to")
   emb_profile: Mapped[Optional["EmbeddedProfile"]] = relationship(
     back_populates="profile", lazy="selectin", uselist=False
   )
   comments: Mapped[list["Comment"]] = relationship(back_populates="author")
+  categories: Mapped[list["Category"]] = relationship(
+    secondary="user_profile_category", back_populates="user_profiles"
+  )
 
   def to_df(self) -> dict:
     """Convert profile data to a DataFrame"""

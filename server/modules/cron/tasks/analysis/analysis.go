@@ -43,19 +43,43 @@ func (as *AnalysisService) GeminiScoringCronjob() {
 		geminiAPILimitInt = 15
 	}
 
-	profiles, err := as.Server.Queries.GetProfilesAnalysisCronjob(ctx, int32(geminiAPILimitInt))
-
+	// Get all categories
+	categories, err := as.Server.Queries.GetCategories(ctx)
 	if err != nil {
 		as.Server.Queries.LogAction(ctx, db.LogActionParams{
 			Action: "gemini_scoring_cronjob",
 			Description: sql.NullString{
-				String: fmt.Sprintf("Failed to get profiles: %v", err.Error()),
+				String: fmt.Sprintf("Failed to get categories: %v", err.Error()),
 				Valid:  true,
 			},
 			TargetID:  sql.NullInt32{Int32: 0, Valid: false},
 			AccountID: sql.NullInt32{Int32: 0, Valid: false},
 		})
-		logger.Errorf("Failed to get profiles: %v", err.Error())
+		logger.Errorf("Failed to get categories: %v", err.Error())
+		return
+	}
+
+	if len(categories) == 0 {
+		logger.Info("No categories found. Skipping...")
+		return
+	}
+
+	// Collect all profiles across all categories
+	var profiles []db.GetProfilesAnalysisCronjobRow
+	for _, category := range categories {
+		categoryProfiles, err := as.Server.Queries.GetProfilesAnalysisCronjob(ctx, db.GetProfilesAnalysisCronjobParams{
+			CategoryID: category.ID,
+			Limit:      int32(geminiAPILimitInt),
+		})
+		if err != nil {
+			logger.Errorf("Failed to get profiles for category %s: %v", category.Name, err)
+			continue
+		}
+		profiles = append(profiles, categoryProfiles...)
+	}
+
+	if len(profiles) == 0 {
+		logger.Info("No profiles to score across all categories. Exiting cronjob.")
 		return
 	}
 
@@ -227,6 +251,7 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 	logger.Info("Starting Self-embedding cronjob")
 	ctx := context.Background()
 	defer ctx.Done()
+	queries := as.Server.Queries
 
 	limitStr := as.Server.GetConfig(ctx, "GEMINI_EMBEDDING_LIMIT", "100")
 	limit, err := strconv.ParseInt(limitStr, 10, 32)
@@ -236,32 +261,71 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 		limit = int64(defaultEmbeddingLimit)
 	}
 
-	profiles, err := as.Server.Queries.GetProfileIDForEmbedding(ctx, int32(limit))
+	// Get all categories
+	categories, err := queries.GetCategories(ctx)
 	if err != nil {
-		logger.Errorf("Failed to get gemini key: %v", err)
+		logger.Errorf("Failed to get categories: %v", err)
 		return
 	}
 
-	if len(profiles) == 0 {
-		logger.Info("No profiles to embed. Exiting cronjob.")
+	if len(categories) == 0 {
+		logger.Info("No categories found. Skipping...")
 		return
 	}
 
-	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
-	idStrs := make([]string, 0, len(profiles))
-	for _, profileId := range profiles {
-		idStrs = append(idStrs, fmt.Sprintf("%d", profileId))
-	}
-	idStr := strings.Join(idStrs, ",")
-	output, err := pythonService.RunScript("--task=embed",
-		fmt.Sprintf("--targets=%s", idStr),
-	)
+	// Process each category
+	for _, category := range categories {
+		logger.Infof("Processing embedding for category: %s (ID: %d)", category.Name, category.ID)
 
-	if err != nil {
-		logger.Errorf("Failed to run embedding script: %v", err)
-		return
+		// Get embedding model config for this category
+		embeddingConfig, err := queries.GetEmbeddingModelConfig(ctx, strconv.Itoa(int(category.ID)))
+		var embeddingModel string
+		if err != nil {
+			logger.Warnf("No embedding model configured for category %s, using default", category.Name)
+			embeddingModel = as.Server.GetConfig(ctx, "EMBEDDING_MODEL_NAME", "")
+		} else {
+			embeddingModel = embeddingConfig.Value
+		}
+
+		if embeddingModel == "" {
+			logger.Infof("No embedding model configured for category %s. Skipping...", category.Name)
+			continue
+		}
+
+		profiles, err := queries.GetProfileIDForEmbedding(ctx, db.GetProfileIDForEmbeddingParams{
+			CategoryID: category.ID,
+			Limit:      int32(limit),
+		})
+		if err != nil {
+			logger.Errorf("Failed to get profiles for embedding (category %s): %v", category.Name, err)
+			continue
+		}
+
+		if len(profiles) == 0 {
+			logger.Infof("No profiles to embed for category %s. Skipping...", category.Name)
+			continue
+		}
+
+		pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
+		idStrs := make([]string, 0, len(profiles))
+		for _, profileId := range profiles {
+			idStrs = append(idStrs, fmt.Sprintf("%d", profileId))
+		}
+		idStr := strings.Join(idStrs, ",")
+		output, err := pythonService.RunScript("--task=embed",
+			fmt.Sprintf("--targets=%s", idStr),
+			fmt.Sprintf("--embedding-model=%s", embeddingModel),
+			fmt.Sprintf("--category-id=%d", category.ID),
+		)
+
+		if err != nil {
+			logger.Errorf("Failed to run embedding script for category %s: %v", category.Name, err)
+			continue
+		}
+		logger.Infof("Category %s embedding output: %s", category.Name, output)
 	}
-	logger.Info("Embedding script output: " + output)
+
+	logger.Info("Completed SelfEmbeddingCronjob for all categories")
 }
 
 func (as *AnalysisService) AddGeminiKey(c echo.Context) error {

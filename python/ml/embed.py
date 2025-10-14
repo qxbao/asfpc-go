@@ -8,7 +8,7 @@ from FlagEmbedding import BGEM3FlagModel
 class BGEM3EmbedModel:
   MODEL_USED = "BAAI/bge-m3"
 
-  def __init__(self):
+  def __init__(self, model_path: str | None = None):
     self.logger = logging.getLogger(__name__)
     if torch.cuda.is_available():
       device = "cuda:0"
@@ -19,12 +19,16 @@ class BGEM3EmbedModel:
     else:
       device = "cpu"
       self.logger.warning("GPU not available, falling back to CPU")
+
+    model_to_load = model_path if model_path else self.MODEL_USED
+    self.logger.info("Loading embedding model: %s", model_to_load)
+
     self.model = BGEM3FlagModel(
-      self.MODEL_USED,
+      model_to_load,
       use_fp16=True,
       devices=device,
     )
-    self.logger.info("BGE-M3 model loaded on %s", device)
+    self.logger.info("Embedding model loaded on %s", device)
 
   def embed(self, texts: str | list[str]) -> list[float] | list[list[float]]:
     """

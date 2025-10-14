@@ -35,81 +35,115 @@ func (s *MLService) ScoreProfilesCronjob() {
 		return
 	}
 
-	modelName := s.Server.GetConfig(ctx, "ML_SCORING_MODEL_NAME", "No")
-	if modelName == "No" {
-		logger.Info("No model configured for scoring. Skipping...")
-		return
-	}
-
-	profiles, err := queries.GetProfilesForScoring(ctx, int32(limitInt))
+	// Get all categories
+	categories, err := queries.GetCategories(ctx)
 	if err != nil {
-		logger.Errorf("failed to get profiles for scoring: %v", err)
-		return
-	}
-	if len(profiles) == 0 {
-		logger.Info("No profiles to score. Skipping...")
+		logger.Errorf("failed to get categories: %v", err)
 		return
 	}
 
-	profileIDs := make([]string, len(profiles))
-	for i, p := range profiles {
-		profileIDs[i] = strconv.Itoa(int(p))
-	}
-	profileIDsStr := strings.Join(profileIDs, ",")
-
-	logger.Info(fmt.Sprintf("Scoring %d profiles using model %s", len(profiles), modelName))
-
-	pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
-
-	res, err := pythonService.RunScript("--task=predict",
-		fmt.Sprintf("--targets=%s", profileIDsStr),
-		fmt.Sprintf("--model-name=%s", modelName),
-	)
-
-	if err != nil {
-		logger.Errorf("failed to run python script: %v", err)
+	if len(categories) == 0 {
+		logger.Info("No categories found. Skipping...")
 		return
 	}
 
-	var resData ScoringResult
-
-	if err := json.Unmarshal([]byte(res), &resData); err != nil {
-		logger.Errorf("failed to unmarshal scoring result: %v", err)
-		logger.Info("Raw response:", res)
-		return
-	}
-	sem := async.GetSemaphore[db.UpdateModelScoreParams, bool](5)
-	updateScore := func(params db.UpdateModelScoreParams) bool {
-		err := queries.UpdateModelScore(ctx, params)
+	// Process each category
+	for _, category := range categories {
+		logger.Infof("Processing category: %s (ID: %d)", category.Name, category.ID)
+		
+		// Get model config for this category
+		modelConfig, err := queries.GetMLModelConfig(ctx, strconv.Itoa(int(category.ID)))
+		var modelName string
 		if err != nil {
-			panic(err)
+			logger.Warnf("No model configured for category %s, using default", category.Name)
+			modelName = s.Server.GetConfig(ctx, "ML_SCORING_MODEL_NAME", "No")
+		} else {
+			modelName = modelConfig.Value
 		}
-		return true
-	}
-	for id, score := range resData {
-		strid, err := strconv.ParseInt(id, 10, 32)
-		if err != nil {
-			logger.Errorf("invalid profile ID from model: %v", err)
+
+		if modelName == "No" {
+			logger.Infof("No model configured for category %s. Skipping...", category.Name)
 			continue
 		}
-		sem.Assign(updateScore, db.UpdateModelScoreParams{
-			ID: int32(strid),
-			ModelScore: sql.NullFloat64{
-				Float64: float64(score),
-				Valid:   true,
-			},
+
+		profiles, err := queries.GetProfilesForScoring(ctx, db.GetProfilesForScoringParams{
+			CategoryID: category.ID,
+			Limit:      int32(limitInt),
 		})
-	}
-	_, errs := sem.Run()
-
-	successCount := 0
-	for _, e := range errs {
-		if e != nil {
-			logger.Errorf("failed to update model score: %v", e)
-		} else {
-			successCount++
+		if err != nil {
+			logger.Errorf("failed to get profiles for scoring (category %s): %v", category.Name, err)
+			continue
 		}
-	}
 
-	logger.Info(fmt.Sprintf("Scored %d profiles, %d successful", len(profiles), successCount))
+		if len(profiles) == 0 {
+			logger.Infof("No profiles to score for category %s. Skipping...", category.Name)
+			continue
+		}
+
+		profileIDs := make([]string, len(profiles))
+		for i, p := range profiles {
+			profileIDs[i] = strconv.Itoa(int(p))
+		}
+		profileIDsStr := strings.Join(profileIDs, ",")
+
+		logger.Infof("Scoring %d profiles for category %s using model %s", len(profiles), category.Name, modelName)
+
+		pythonService := python.NewPythonService(os.Getenv("PYTHON_ENV_NAME"), false, true, nil)
+
+		res, err := pythonService.RunScript("--task=predict",
+			fmt.Sprintf("--targets=%s", profileIDsStr),
+			fmt.Sprintf("--model-name=%s", modelName),
+			fmt.Sprintf("--category-id=%d", category.ID),
+		)
+
+		if err != nil {
+			logger.Errorf("failed to run python script for category %s: %v", category.Name, err)
+			continue
+		}
+
+		var resData ScoringResult
+
+		if err := json.Unmarshal([]byte(res), &resData); err != nil {
+			logger.Errorf("failed to unmarshal scoring result for category %s: %v", category.Name, err)
+			logger.Info("Raw response:", res)
+			continue
+		}
+
+		sem := async.GetSemaphore[db.UpdateModelScoreParams, bool](5)
+		updateScore := func(params db.UpdateModelScoreParams) bool {
+			err := queries.UpdateModelScore(ctx, params)
+			if err != nil {
+				panic(err)
+			}
+			return true
+		}
+		for id, score := range resData {
+			strid, err := strconv.ParseInt(id, 10, 32)
+			if err != nil {
+				logger.Errorf("invalid profile ID from model: %v", err)
+				continue
+			}
+			sem.Assign(updateScore, db.UpdateModelScoreParams{
+				ID: int32(strid),
+				ModelScore: sql.NullFloat64{
+					Float64: float64(score),
+					Valid:   true,
+				},
+			})
+		}
+		_, errs := sem.Run()
+
+		successCount := 0
+		for _, e := range errs {
+			if e != nil {
+				logger.Errorf("failed to update model score: %v", e)
+			} else {
+				successCount++
+			}
+		}
+
+		logger.Infof("Category %s: Scored %d profiles, %d successful", category.Name, len(profiles), successCount)
+	} // End category loop
+
+	logger.Info("Completed ScoreProfilesCronjob for all categories")
 }

@@ -10,6 +10,7 @@ import pandas as pd
 from browser.account import AccountAutomationService
 from browser.group import GroupAutomationService
 from database.services.account import AccountService
+from database.services.config import ConfigService
 from database.services.group import GroupService
 from database.services.profile import ProfileService
 from database.services.prompt import PromptService
@@ -68,6 +69,8 @@ class TaskNavigator:
     model_name = self.config.get("model-name", "ModelX")
     request_id = self.config.get("request-id", None)
     trials = self.config.get("trials", None)
+    category_id = self.config.get("category-id", None)
+
     if request_id is not None:
       try:
         request_id = int(request_id)
@@ -78,11 +81,16 @@ class TaskNavigator:
       err_msg = "--request-id is required for train-model task"
       raise ValueError(err_msg)
 
-    self.logger.info("Training model: %s", model_name)
+    if category_id is not None:
+      category_id = int(category_id)
+      self.logger.info("Training model: %s for category ID: %d", model_name, category_id)
+    else:
+      self.logger.info("Training model: %s (all categories)", model_name)
+
     ps = ProfileService()
-    profiles = await ps.get_training_profiles()
+    profiles = await ps.get_training_profiles(category_id=category_id)
     if not profiles:
-      err_msg = "No profiles available for training"
+      err_msg = f"No profiles available for training{f' in category {category_id}' if category_id else ''}"
       raise ValueError(err_msg)
     self.logger.info("Found %d profiles for training", len(profiles))
     input_df = pd.DataFrame([p.to_df() for p in profiles])
@@ -132,6 +140,17 @@ class TaskNavigator:
 
     id_set = {int(x) for x in targets.split(",")}
     id_list = list(id_set)
+
+    # Get category ID and load category-specific model path
+    category_id = self.config.get("category-id", None)
+    model_path_override = None
+    if category_id:
+      config_service = ConfigService()
+      model_path_override = await config_service.get_ml_model_path(int(category_id))
+      if model_path_override:
+        self.logger.info("Using category-specific ML model: %s", model_path_override)
+        model_name = model_path_override
+
     model = PotentialCustomerScoringModel(
       model_name=model_name,
     )
@@ -173,10 +192,28 @@ class TaskNavigator:
 
     id_set = {int(x) for x in targets.split(",")}
     id_list = list(id_set)
-    model = BGEM3EmbedModel()
+
+    # Get category ID and load category-specific model
+    category_id = self.config.get("category-id", None)
+    embedding_model_path = None
+    if category_id:
+      config_service = ConfigService()
+      embedding_model_path = await config_service.get_embedding_model_path(int(category_id))
+      if embedding_model_path:
+        self.logger.info("Using category-specific embedding model: %s", embedding_model_path)
+
+    model = BGEM3EmbedModel(model_path=embedding_model_path)
     profile_service = ProfileService()
     prompt_service = PromptService()
-    template = await prompt_service.get_prompt("self-embedding")
+
+    # Get category-specific prompt if available
+    if category_id:
+      template = await prompt_service.get_prompt_by_key_and_category("self-embedding", int(category_id))
+    else:
+      template = await prompt_service.get_prompt("self-embedding")
+    if not template:
+      # Fallback to default prompt
+      template = await prompt_service.get_prompt("self-embedding")
     if not template:
       err_msg = "Prompt 'self-embedding' not found in database"
       raise Exception(err_msg)

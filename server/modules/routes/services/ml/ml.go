@@ -73,6 +73,10 @@ func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO)
 		args = append(args, fmt.Sprintf("--trials=%d", *dto.Trials))
 	}
 
+	if dto.CategoryID != nil {
+		args = append(args, fmt.Sprintf("--category-id=%d", *dto.CategoryID))
+	}
+
 	_, err := pythonService.RunScript(
 		args...,
 	)

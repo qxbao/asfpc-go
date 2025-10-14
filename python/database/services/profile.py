@@ -14,7 +14,7 @@ class ProfileService:
   def __init__(self):
     self.logger = logging.getLogger("ProfileService")
 
-  async def get_training_profiles(self) -> list[UserProfile]:
+  async def get_training_profiles(self, category_id: int | None = None) -> list[UserProfile]:
     try:
       async with Database.get_session() as conn:
         query = (
@@ -22,6 +22,11 @@ class ProfileService:
           .where(and_(UserProfile.is_analyzed, UserProfile.emb_profile.has()))
           .options(selectinload(UserProfile.emb_profile))
         )
+
+        if category_id is not None:
+          # Filter by category using the many-to-many relationship
+          query = query.join(UserProfile.categories).where(UserProfile.categories.any(id=category_id))
+        
         res = await conn.execute(query)
         return list(res.scalars().all())
     except Exception:

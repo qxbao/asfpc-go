@@ -17,7 +17,8 @@ const addAllProfilesToCategory = `-- name: AddAllProfilesToCategory :execrows
 INSERT INTO public.user_profile_category (user_profile_id, category_id, created_at)
 SELECT up.id, $1, NOW()
 FROM public.user_profile up
-WHERE NOT EXISTS (
+WHERE up.is_scanned = true
+AND NOT EXISTS (
     SELECT 1 FROM public.user_profile_category upc
     WHERE upc.user_profile_id = up.id AND upc.category_id = $1
 )
@@ -94,6 +95,17 @@ func (q *Queries) CountProfiles(ctx context.Context) (int64, error) {
 	var total_profiles int64
 	err := row.Scan(&total_profiles)
 	return total_profiles, err
+}
+
+const countProfilesInCategory = `-- name: CountProfilesInCategory :one
+SELECT COUNT(*) FROM public.user_profile_category WHERE category_id = $1
+`
+
+func (q *Queries) CountProfilesInCategory(ctx context.Context, categoryID int32) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProfilesInCategory, categoryID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countPrompts = `-- name: CountPrompts :one
@@ -825,6 +837,34 @@ func (q *Queries) GetCategoryByID(ctx context.Context, id int32) (Category, erro
 	return i, err
 }
 
+const getCategoryMLConfigs = `-- name: GetCategoryMLConfigs :many
+SELECT id, key, value FROM public.config 
+WHERE key LIKE 'ml_model_path_category_%' OR key LIKE 'embedding_model_category_%'
+`
+
+func (q *Queries) GetCategoryMLConfigs(ctx context.Context) ([]Config, error) {
+	rows, err := q.db.QueryContext(ctx, getCategoryMLConfigs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Config
+	for rows.Next() {
+		var i Config
+		if err := rows.Scan(&i.ID, &i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, key, value FROM public.config WHERE "key" = $1
 `
@@ -881,6 +921,18 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 		&i.ActiveAccounts,
 		&i.BlockedAccounts,
 	)
+	return i, err
+}
+
+const getEmbeddingModelConfig = `-- name: GetEmbeddingModelConfig :one
+SELECT id, key, value FROM public.config 
+WHERE key = 'embedding_model_category_' || $1::text
+`
+
+func (q *Queries) GetEmbeddingModelConfig(ctx context.Context, dollar_1 string) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getEmbeddingModelConfig, dollar_1)
+	var i Config
+	err := row.Scan(&i.ID, &i.Key, &i.Value)
 	return i, err
 }
 
@@ -1128,6 +1180,19 @@ func (q *Queries) GetLogs(ctx context.Context, arg GetLogsParams) ([]GetLogsRow,
 	return items, nil
 }
 
+const getMLModelConfig = `-- name: GetMLModelConfig :one
+SELECT id, key, value FROM public.config 
+WHERE key = 'ml_model_path_category_' || $1::text
+`
+
+// Model Configuration queries for category-specific ML models
+func (q *Queries) GetMLModelConfig(ctx context.Context, dollar_1 string) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getMLModelConfig, dollar_1)
+	var i Config
+	err := row.Scan(&i.ID, &i.Key, &i.Value)
+	return i, err
+}
+
 const getOKAccountIds = `-- name: GetOKAccountIds :many
 SELECT t.id
 FROM (SELECT a.id,
@@ -1235,14 +1300,22 @@ func (q *Queries) GetProfileEmbedding(ctx context.Context, pid int32) (interface
 }
 
 const getProfileIDForEmbedding = `-- name: GetProfileIDForEmbedding :many
-SELECT id FROM public.user_profile
-WHERE id NOT IN (
+SELECT up.id FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.id NOT IN (
   SELECT pid FROM public.embedded_profile
-) AND is_scanned = true LIMIT $1
+) AND up.is_scanned = true 
+AND upc.category_id = $1
+LIMIT $2
 `
 
-func (q *Queries) GetProfileIDForEmbedding(ctx context.Context, limit int32) ([]int32, error) {
-	rows, err := q.db.QueryContext(ctx, getProfileIDForEmbedding, limit)
+type GetProfileIDForEmbeddingParams struct {
+	CategoryID int32 `json:"category_id"`
+	Limit      int32 `json:"limit"`
+}
+
+func (q *Queries) GetProfileIDForEmbedding(ctx context.Context, arg GetProfileIDForEmbeddingParams) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getProfileIDForEmbedding, arg.CategoryID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1296,7 +1369,7 @@ func (q *Queries) GetProfileStats(ctx context.Context) (GetProfileStatsRow, erro
 
 const getProfilesAnalysisCronjob = `-- name: GetProfilesAnalysisCronjob :many
 SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score,
-  ep.id as category_id,
+  upc.category_id,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -1309,11 +1382,17 @@ SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.educatio
   (COALESCE(up.email, '') != '')::int +
   (COALESCE(up.phone, '') != '')::int AS non_null_count
 FROM public.user_profile up
-JOIN public.embedded_profile ep ON up.id = ep.user_profile_id
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
 WHERE up.is_scanned = true AND up.is_analyzed = false
+AND upc.category_id = $1
 ORDER BY non_null_count DESC, up.updated_at ASC
-LIMIT $1
+LIMIT $2
 `
+
+type GetProfilesAnalysisCronjobParams struct {
+	CategoryID int32 `json:"category_id"`
+	Limit      int32 `json:"limit"`
+}
 
 type GetProfilesAnalysisCronjobRow struct {
 	ID                 int32           `json:"id"`
@@ -1342,8 +1421,8 @@ type GetProfilesAnalysisCronjobRow struct {
 	NonNullCount       int32           `json:"non_null_count"`
 }
 
-func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, limit int32) ([]GetProfilesAnalysisCronjobRow, error) {
-	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisCronjob, limit)
+func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, arg GetProfilesAnalysisCronjobParams) ([]GetProfilesAnalysisCronjobRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisCronjob, arg.CategoryID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1398,7 +1477,12 @@ SELECT
   up.is_analyzed,
   up.gemini_score,
   up.model_score,
-  (COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json))::jsonb as categories,
+  (COALESCE((
+    SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'description', c.description))
+    FROM public.user_profile_category upc
+    JOIN public.category c ON c.id = upc.category_id
+    WHERE upc.user_profile_id = up.id
+  ), '[]'::json))::jsonb as categories,
   ((COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -1545,12 +1629,19 @@ func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExp
 const getProfilesForScoring = `-- name: GetProfilesForScoring :many
 SELECT up.id FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid
-WHERE is_scanned = true AND model_score IS NULL
-LIMIT $1
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.is_scanned = true AND up.model_score IS NULL
+AND upc.category_id = $1
+LIMIT $2
 `
 
-func (q *Queries) GetProfilesForScoring(ctx context.Context, limit int32) ([]int32, error) {
-	rows, err := q.db.QueryContext(ctx, getProfilesForScoring, limit)
+type GetProfilesForScoringParams struct {
+	CategoryID int32 `json:"category_id"`
+	Limit      int32 `json:"limit"`
+}
+
+func (q *Queries) GetProfilesForScoring(ctx context.Context, arg GetProfilesForScoringParams) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesForScoring, arg.CategoryID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2037,6 +2128,38 @@ type RollbackPromptParams struct {
 
 func (q *Queries) RollbackPrompt(ctx context.Context, arg RollbackPromptParams) error {
 	_, err := q.db.ExecContext(ctx, rollbackPrompt, arg.ServiceName, arg.CategoryID)
+	return err
+}
+
+const setEmbeddingModelConfig = `-- name: SetEmbeddingModelConfig :exec
+INSERT INTO public.config (key, value)
+VALUES ('embedding_model_category_' || $1::text, $2)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+`
+
+type SetEmbeddingModelConfigParams struct {
+	Column1 string `json:"column_1"`
+	Value   string `json:"value"`
+}
+
+func (q *Queries) SetEmbeddingModelConfig(ctx context.Context, arg SetEmbeddingModelConfigParams) error {
+	_, err := q.db.ExecContext(ctx, setEmbeddingModelConfig, arg.Column1, arg.Value)
+	return err
+}
+
+const setMLModelConfig = `-- name: SetMLModelConfig :exec
+INSERT INTO public.config (key, value)
+VALUES ('ml_model_path_category_' || $1::text, $2)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+`
+
+type SetMLModelConfigParams struct {
+	Column1 string `json:"column_1"`
+	Value   string `json:"value"`
+}
+
+func (q *Queries) SetMLModelConfig(ctx context.Context, arg SetMLModelConfigParams) error {
+	_, err := q.db.ExecContext(ctx, setMLModelConfig, arg.Column1, arg.Value)
 	return err
 }
 
