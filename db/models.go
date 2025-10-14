@@ -57,6 +57,22 @@ type EmbeddedProfile struct {
 	Embedding interface{}  `json:"embedding"`
 }
 
+type FinancialAnalysis struct {
+	ID                   int32                 `json:"id"`
+	FinancialStatus      string                `json:"financial_status"`
+	ConfidenceScore      float64               `json:"confidence_score"`
+	AnalysisSummary      string                `json:"analysis_summary"`
+	Indicators           pqtype.NullRawMessage `json:"indicators"`
+	GeminiModelUsed      string                `json:"gemini_model_used"`
+	PromptTokensUsed     sql.NullInt32         `json:"prompt_tokens_used"`
+	PromptUsedID         int32                 `json:"prompt_used_id"`
+	CompletionTokensUsed sql.NullInt32         `json:"completion_tokens_used"`
+	TotalTokensUsed      sql.NullInt32         `json:"total_tokens_used"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
+	UserProfileID        int32                 `json:"user_profile_id"`
+}
+
 type GeminiKey struct {
 	ID        int32        `json:"id"`
 	ApiKey    string       `json:"api_key"`
@@ -95,15 +111,22 @@ type Log struct {
 	CreatedAt   sql.NullTime   `json:"created_at"`
 }
 
+type Model struct {
+	ID          int32          `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   time.Time      `json:"created_at"`
+	CategoryID  sql.NullInt32  `json:"category_id"`
+}
+
 type Post struct {
-	ID         int32        `json:"id"`
-	PostID     string       `json:"post_id"`
-	Content    string       `json:"content"`
-	CreatedAt  time.Time    `json:"created_at"`
-	InsertedAt time.Time    `json:"inserted_at"`
-	GroupID    int32        `json:"group_id"`
-	IsAnalyzed bool         `json:"is_analyzed"`
-	ScannedAt  sql.NullTime `json:"scanned_at"`
+	ID         int32     `json:"id"`
+	PostID     string    `json:"post_id"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+	InsertedAt time.Time `json:"inserted_at"`
+	GroupID    int32     `json:"group_id"`
+	IsAnalyzed bool      `json:"is_analyzed"`
 }
 
 type Prompt struct {

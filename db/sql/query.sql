@@ -200,11 +200,6 @@ WHERE up.id NOT IN (
 AND upc.category_id = $1
 LIMIT $2;
 
--- name: CreateEmbeddedProfile :one
-INSERT INTO public.embedded_profile (pid, embedding, created_at)
-VALUES ($1, $2, NOW())
-RETURNING *;
-
 -- name: UpsertEmbeddedProfiles :exec
 INSERT INTO public.embedded_profile (pid, embedding, created_at)
 VALUES ($1, $2, NOW())
@@ -577,26 +572,32 @@ AND NOT EXISTS (
     SELECT 1 FROM public.user_profile_category upc
     WHERE upc.user_profile_id = up.id AND upc.category_id = $1
 );
+-- Model Management queries
+-- name: GetModels :many
+SELECT * FROM public.model
+ORDER BY created_at DESC;
 
--- Model Configuration queries for category-specific ML models
--- name: GetMLModelConfig :one
-SELECT * FROM public.config 
-WHERE key = 'ml_model_path_category_' || $1::text;
+-- name: CreateModel :one
+INSERT INTO public.model (name, description, category_id, created_at)
+VALUES ($1, $2, $3, NOW())
+RETURNING *;
 
--- name: SetMLModelConfig :exec
-INSERT INTO public.config (key, value)
-VALUES ('ml_model_path_category_' || $1::text, $2)
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+-- name: UpdateModel :one
+UPDATE public.model
+SET name = $2,
+    description = $3,
+    category_id = $4
+WHERE id = $1
+RETURNING *;
 
--- name: GetEmbeddingModelConfig :one
-SELECT * FROM public.config 
-WHERE key = 'embedding_model_category_' || $1::text;
+-- name: DeleteModel :exec
+DELETE FROM public.model WHERE id = $1;
 
--- name: SetEmbeddingModelConfig :exec
-INSERT INTO public.config (key, value)
-VALUES ('embedding_model_category_' || $1::text, $2)
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+-- name: GetModelByID :one
+SELECT * FROM public.model WHERE id = $1;
 
--- name: GetCategoryMLConfigs :many
-SELECT * FROM public.config 
-WHERE key LIKE 'ml_model_path_category_%' OR key LIKE 'embedding_model_category_%';
+-- name: GetModelByCategory :one
+SELECT * FROM public.model WHERE category_id = $1;
+
+-- name: GetModelsWithoutCategory :many
+SELECT * FROM public.model WHERE category_id IS NULL ORDER BY created_at DESC;

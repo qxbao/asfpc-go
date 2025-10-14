@@ -102,6 +102,24 @@ func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO)
 	if err != nil {
 		logger.Errorf("Failed to update request status for request %d: %v", requestId, err)
 	}
+
+	ctx := context.Background()
+	categoryID := sql.NullInt32{Valid: false}
+	if dto.CategoryID != nil {
+		categoryID = sql.NullInt32{Int32: *dto.CategoryID, Valid: true}
+	}
+
+	description := fmt.Sprintf("Model trained on %s", time.Now().Format("2006-01-02 15:04:05"))
+	_, err = s.Server.Queries.CreateModel(ctx, db.CreateModelParams{
+		Name:        *dto.ModelName,
+		Description: sql.NullString{String: description, Valid: true},
+		CategoryID:  categoryID,
+	})
+	if err != nil {
+		logger.Errorf("Failed to create model row in database for %s: %v", *dto.ModelName, err)
+	} else {
+		logger.Infof("Model row created in database for %s", *dto.ModelName)
+	}
 }
 
 type PredictionStats struct {
@@ -137,9 +155,123 @@ type ModelMetadata struct {
 }
 
 type ModelInfo struct {
-	Name       string
-	Metadata   *ModelMetadata
-	Validation *ModelValidation
+	ID          int                `json:"id,omitempty"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	CategoryID  int32              `json:"category_id,omitempty"`
+	CreatedAt   time.Time          `json:"created_at,omitempty"`
+	Metadata    *ModelMetadata     `json:"metadata,omitempty"`
+	Validation  *ModelValidation   `json:"validation,omitempty"`
+}
+
+// SyncModelsWithDatabase synchronizes models between filesystem and database
+// Called during server startup to ensure consistency
+func (s *MLRoutingService) SyncModelsWithDatabase(ctx context.Context) error {
+	logger.Info("Starting model sync between filesystem and database...")
+	
+	modelsDir := path.Join("python", "resources", "models")
+	exc, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	modelsPath := path.Join(path.Dir(exc), modelsDir)
+	if err := os.MkdirAll(modelsPath, 0755); err != nil {
+		return fmt.Errorf("failed to create models directory: %w", err)
+	}
+
+	// Get all models from database
+	dbModels, err := s.Server.Queries.GetModels(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get models from database: %w", err)
+	}
+
+	// Create maps for easy lookup
+	dbModelMap := make(map[string]db.Model)
+	for _, model := range dbModels {
+		dbModelMap[model.Name] = model
+	}
+
+	// Get all folders in models directory
+	folders, err := os.ReadDir(modelsPath)
+	if err != nil {
+		return fmt.Errorf("failed to read models directory: %w", err)
+	}
+
+	folderMap := make(map[string]bool)
+	addedCount := 0
+	
+	// Check folders and add missing models to database
+	for _, folder := range folders {
+		if !folder.IsDir() {
+			continue
+		}
+		
+		folderName := folder.Name()
+		folderMap[folderName] = true
+		
+		// Validate model folder
+		validation, err := s.ValidateModel(folderName)
+		if err != nil {
+			logger.Warnf("Failed to validate model %s: %v", folderName, err)
+			continue
+		}
+		
+		// Only sync valid models
+		if !validation.IsValid {
+			logger.Infof("Skipping invalid model folder: %s", folderName)
+			continue
+		}
+		
+		// Check if model exists in database
+		if _, exists := dbModelMap[folderName]; !exists {
+			// Create model in database
+			description := fmt.Sprintf("Auto-synced model from filesystem on %s", time.Now().Format("2006-01-02 15:04:05"))
+			_, err := s.Server.Queries.CreateModel(ctx, db.CreateModelParams{
+				Name:        folderName,
+				Description: sql.NullString{String: description, Valid: true},
+				CategoryID:  sql.NullInt32{Valid: false},
+			})
+			if err != nil {
+				logger.Errorf("Failed to create model %s in database: %v", folderName, err)
+			} else {
+				logger.Infof("✓ Added model to database: %s", folderName)
+				addedCount++
+			}
+		}
+	}
+
+	// Check database models and delete orphaned entries
+	deletedCount := 0
+	for _, dbModel := range dbModels {
+		if !folderMap[dbModel.Name] {
+			// Model exists in database but not in filesystem, delete it
+			if err := s.Server.Queries.DeleteModel(ctx, dbModel.ID); err != nil {
+				logger.Errorf("Failed to delete orphaned model %s from database: %v", dbModel.Name, err)
+			} else {
+				logger.Infof("✗ Removed orphaned model from database: %s (ID: %d)", dbModel.Name, dbModel.ID)
+				deletedCount++
+			}
+		}
+	}
+
+	logger.Infof("Model sync completed: %d added, %d removed", addedCount, deletedCount)
+	return nil
+}
+
+// SyncModels is the HTTP handler for manual model sync
+func (s *MLRoutingService) SyncModels(c echo.Context) error {
+	ctx := c.Request().Context()
+	
+	if err := s.SyncModelsWithDatabase(ctx); err != nil {
+		return c.JSON(500, map[string]any{
+			"error": fmt.Sprintf("Sync failed: %v", err),
+		})
+	}
+	
+	return c.JSON(200, map[string]any{
+		"message": "Model sync completed successfully",
+	})
 }
 
 func (s *MLRoutingService) ListModels(c echo.Context) error {
@@ -160,8 +292,21 @@ func (s *MLRoutingService) ListModels(c echo.Context) error {
 		})
 	}
 
-	folders, err := os.ReadDir(modelsPath)
+	// Get all models from database
+	dbModels, err := s.Server.Queries.GetModels(c.Request().Context())
+	if err != nil {
+		return c.JSON(500, map[string]any{
+			"error": "Failed to get models from database: " + err.Error(),
+		})
+	}
 
+	// Create a map for quick lookup
+	dbModelMap := make(map[string]db.Model)
+	for _, model := range dbModels {
+		dbModelMap[model.Name] = model
+	}
+
+	folders, err := os.ReadDir(modelsPath)
 	if err != nil {
 		return c.JSON(500, map[string]any{
 			"error": "Failed to read models directory: " + err.Error(),
@@ -173,30 +318,48 @@ func (s *MLRoutingService) ListModels(c echo.Context) error {
 		if !folder.IsDir() {
 			continue
 		}
-		models = append(models, ModelInfo{Name: folder.Name()})
+		
+		modelInfo := ModelInfo{Name: folder.Name()}
+		
+		// Get info from database if exists
+		if dbModel, exists := dbModelMap[folder.Name()]; exists {
+			modelInfo.ID = int(dbModel.ID)
+			modelInfo.Description = dbModel.Description.String
+			if dbModel.CategoryID.Valid {
+				modelInfo.CategoryID = dbModel.CategoryID.Int32
+			}
+			modelInfo.CreatedAt = dbModel.CreatedAt
+		}
+		
 		validation, err := s.ValidateModel(folder.Name())
 		if err != nil {
 			return c.JSON(500, map[string]any{
 				"error": "Failed to validate model " + folder.Name() + ": " + err.Error(),
 			})
 		}
-		models[len(models)-1].Validation = &validation
+		modelInfo.Validation = &validation
+		
 		if !validation.IsValid {
+			models = append(models, modelInfo)
 			continue
 		}
+		
+		// Read metadata.json from folder
 		metadataPath := path.Join(path.Dir(exc), modelsDir, folder.Name(), "metadata.json")
 		if _, err := os.Stat(metadataPath); err == nil {
 			data, err := os.ReadFile(metadataPath)
 			var metadata ModelMetadata
 			if err == nil {
 				if err := json.Unmarshal(data, &metadata); err == nil {
-					models[len(models)-1].Metadata = &metadata
+					modelInfo.Metadata = &metadata
 				}
 			} else {
 				metadata = ModelMetadata{}
-				models[len(models)-1].Metadata = &metadata
+				modelInfo.Metadata = &metadata
 			}
 		}
+		
+		models = append(models, modelInfo)
 	}
 
 	return c.JSON(200, map[string]any{
@@ -303,10 +466,28 @@ func (s *MLRoutingService) DeleteModel(c echo.Context) error {
 		})
 	}
 
+	// Delete folder
 	if err := os.RemoveAll(modelPath); err != nil {
 		return c.JSON(500, map[string]any{
-			"error": "Failed to delete model: " + err.Error(),
+			"error": "Failed to delete model folder: " + err.Error(),
 		})
+	}
+
+	// Delete from database if exists
+	ctx := c.Request().Context()
+	dbModels, err := s.Server.Queries.GetModels(ctx)
+	if err == nil {
+		for _, dbModel := range dbModels {
+			if dbModel.Name == dto.ModelName {
+				if err := s.Server.Queries.DeleteModel(ctx, dbModel.ID); err != nil {
+					logger.Errorf("Failed to delete model from database: %v", err)
+					// Don't fail the request if DB delete fails, just log it
+				} else {
+					logger.Infof("Model %s deleted from database (ID: %d)", dto.ModelName, dbModel.ID)
+				}
+				break
+			}
+		}
 	}
 
 	return c.JSON(200, map[string]any{

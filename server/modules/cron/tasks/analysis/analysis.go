@@ -277,21 +277,6 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 	for _, category := range categories {
 		logger.Infof("Processing embedding for category: %s (ID: %d)", category.Name, category.ID)
 
-		// Get embedding model config for this category
-		embeddingConfig, err := queries.GetEmbeddingModelConfig(ctx, strconv.Itoa(int(category.ID)))
-		var embeddingModel string
-		if err != nil {
-			logger.Warnf("No embedding model configured for category %s, using default", category.Name)
-			embeddingModel = as.Server.GetConfig(ctx, "EMBEDDING_MODEL_NAME", "")
-		} else {
-			embeddingModel = embeddingConfig.Value
-		}
-
-		if embeddingModel == "" {
-			logger.Infof("No embedding model configured for category %s. Skipping...", category.Name)
-			continue
-		}
-
 		profiles, err := queries.GetProfileIDForEmbedding(ctx, db.GetProfileIDForEmbeddingParams{
 			CategoryID: category.ID,
 			Limit:      int32(limit),
@@ -314,7 +299,6 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 		idStr := strings.Join(idStrs, ",")
 		output, err := pythonService.RunScript("--task=embed",
 			fmt.Sprintf("--targets=%s", idStr),
-			fmt.Sprintf("--embedding-model=%s", embeddingModel),
 			fmt.Sprintf("--category-id=%d", category.ID),
 		)
 

@@ -7,9 +7,8 @@ import (
 	"path"
 
 	"go.uber.org/fx"
-	"go.uber.org/zap"
-
 	"github.com/qxbao/asfpc/db"
+	lg "github.com/qxbao/asfpc/pkg/logger"
 )
 
 type Seed struct {
@@ -17,7 +16,8 @@ type Seed struct {
 	Prompts map[string]string `json:"prompt"`
 }
 
-func SeedData(logger zap.SugaredLogger, queries *db.Queries) {
+func SeedData(queries *db.Queries) {
+	logger := lg.GetLogger("SeedModule")
 	logger.Info("Generating seed data...")
 
 	exe, err := os.Executable()
@@ -66,6 +66,7 @@ func SeedData(logger zap.SugaredLogger, queries *db.Queries) {
 				ServiceName: name,
 				Content:     content,
 				CreatedBy:   "system",
+				CategoryID:  c.ID,
 			})
 		}
 	}

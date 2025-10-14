@@ -228,29 +228,6 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 	return i, err
 }
 
-const createEmbeddedProfile = `-- name: CreateEmbeddedProfile :one
-INSERT INTO public.embedded_profile (pid, embedding, created_at)
-VALUES ($1, $2, NOW())
-RETURNING id, pid, created_at, embedding
-`
-
-type CreateEmbeddedProfileParams struct {
-	Pid       int32       `json:"pid"`
-	Embedding interface{} `json:"embedding"`
-}
-
-func (q *Queries) CreateEmbeddedProfile(ctx context.Context, arg CreateEmbeddedProfileParams) (EmbeddedProfile, error) {
-	row := q.db.QueryRowContext(ctx, createEmbeddedProfile, arg.Pid, arg.Embedding)
-	var i EmbeddedProfile
-	err := row.Scan(
-		&i.ID,
-		&i.Pid,
-		&i.CreatedAt,
-		&i.Embedding,
-	)
-	return i, err
-}
-
 const createGeminiKey = `-- name: CreateGeminiKey :one
 INSERT INTO public.gemini_key (api_key)
 VALUES ($1)
@@ -295,12 +272,37 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 	return i, err
 }
 
+const createModel = `-- name: CreateModel :one
+INSERT INTO public.model (name, description, category_id, created_at)
+VALUES ($1, $2, $3, NOW())
+RETURNING id, name, description, created_at, category_id
+`
+
+type CreateModelParams struct {
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	CategoryID  sql.NullInt32  `json:"category_id"`
+}
+
+func (q *Queries) CreateModel(ctx context.Context, arg CreateModelParams) (Model, error) {
+	row := q.db.QueryRowContext(ctx, createModel, arg.Name, arg.Description, arg.CategoryID)
+	var i Model
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.CategoryID,
+	)
+	return i, err
+}
+
 const createPost = `-- name: CreatePost :one
 INSERT INTO public.post (post_id, content, created_at, inserted_at, group_id, is_analyzed)
 VALUES ($1, $2, $3, NOW(), $4, true)
 ON CONFLICT (post_id) DO UPDATE SET
     id = EXCLUDED.id
-RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed, scanned_at
+RETURNING id, post_id, content, created_at, inserted_at, group_id, is_analyzed
 `
 
 type CreatePostParams struct {
@@ -326,7 +328,6 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		&i.InsertedAt,
 		&i.GroupID,
 		&i.IsAnalyzed,
-		&i.ScannedAt,
 	)
 	return i, err
 }
@@ -531,6 +532,15 @@ func (q *Queries) DeleteJunkProfiles(ctx context.Context) (int64, error) {
 	var deleted_count int64
 	err := row.Scan(&deleted_count)
 	return deleted_count, err
+}
+
+const deleteModel = `-- name: DeleteModel :exec
+DELETE FROM public.model WHERE id = $1
+`
+
+func (q *Queries) DeleteModel(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, deleteModel, id)
+	return err
 }
 
 const deletePrompt = `-- name: DeletePrompt :exec
@@ -837,34 +847,6 @@ func (q *Queries) GetCategoryByID(ctx context.Context, id int32) (Category, erro
 	return i, err
 }
 
-const getCategoryMLConfigs = `-- name: GetCategoryMLConfigs :many
-SELECT id, key, value FROM public.config 
-WHERE key LIKE 'ml_model_path_category_%' OR key LIKE 'embedding_model_category_%'
-`
-
-func (q *Queries) GetCategoryMLConfigs(ctx context.Context) ([]Config, error) {
-	rows, err := q.db.QueryContext(ctx, getCategoryMLConfigs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Config
-	for rows.Next() {
-		var i Config
-		if err := rows.Scan(&i.ID, &i.Key, &i.Value); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, key, value FROM public.config WHERE "key" = $1
 `
@@ -921,18 +903,6 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 		&i.ActiveAccounts,
 		&i.BlockedAccounts,
 	)
-	return i, err
-}
-
-const getEmbeddingModelConfig = `-- name: GetEmbeddingModelConfig :one
-SELECT id, key, value FROM public.config 
-WHERE key = 'embedding_model_category_' || $1::text
-`
-
-func (q *Queries) GetEmbeddingModelConfig(ctx context.Context, dollar_1 string) (Config, error) {
-	row := q.db.QueryRowContext(ctx, getEmbeddingModelConfig, dollar_1)
-	var i Config
-	err := row.Scan(&i.ID, &i.Key, &i.Value)
 	return i, err
 }
 
@@ -1180,17 +1150,106 @@ func (q *Queries) GetLogs(ctx context.Context, arg GetLogsParams) ([]GetLogsRow,
 	return items, nil
 }
 
-const getMLModelConfig = `-- name: GetMLModelConfig :one
-SELECT id, key, value FROM public.config 
-WHERE key = 'ml_model_path_category_' || $1::text
+const getModelByCategory = `-- name: GetModelByCategory :one
+SELECT id, name, description, created_at, category_id FROM public.model WHERE category_id = $1
 `
 
-// Model Configuration queries for category-specific ML models
-func (q *Queries) GetMLModelConfig(ctx context.Context, dollar_1 string) (Config, error) {
-	row := q.db.QueryRowContext(ctx, getMLModelConfig, dollar_1)
-	var i Config
-	err := row.Scan(&i.ID, &i.Key, &i.Value)
+func (q *Queries) GetModelByCategory(ctx context.Context, categoryID sql.NullInt32) (Model, error) {
+	row := q.db.QueryRowContext(ctx, getModelByCategory, categoryID)
+	var i Model
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.CategoryID,
+	)
 	return i, err
+}
+
+const getModelByID = `-- name: GetModelByID :one
+SELECT id, name, description, created_at, category_id FROM public.model WHERE id = $1
+`
+
+func (q *Queries) GetModelByID(ctx context.Context, id int32) (Model, error) {
+	row := q.db.QueryRowContext(ctx, getModelByID, id)
+	var i Model
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.CategoryID,
+	)
+	return i, err
+}
+
+const getModels = `-- name: GetModels :many
+SELECT id, name, description, created_at, category_id FROM public.model
+ORDER BY created_at DESC
+`
+
+// Model Management queries
+func (q *Queries) GetModels(ctx context.Context) ([]Model, error) {
+	rows, err := q.db.QueryContext(ctx, getModels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Model
+	for rows.Next() {
+		var i Model
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.CategoryID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getModelsWithoutCategory = `-- name: GetModelsWithoutCategory :many
+SELECT id, name, description, created_at, category_id FROM public.model WHERE category_id IS NULL ORDER BY created_at DESC
+`
+
+func (q *Queries) GetModelsWithoutCategory(ctx context.Context) ([]Model, error) {
+	rows, err := q.db.QueryContext(ctx, getModelsWithoutCategory)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Model
+	for rows.Next() {
+		var i Model
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.CategoryID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getOKAccountIds = `-- name: GetOKAccountIds :many
@@ -2131,38 +2190,6 @@ func (q *Queries) RollbackPrompt(ctx context.Context, arg RollbackPromptParams) 
 	return err
 }
 
-const setEmbeddingModelConfig = `-- name: SetEmbeddingModelConfig :exec
-INSERT INTO public.config (key, value)
-VALUES ('embedding_model_category_' || $1::text, $2)
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-`
-
-type SetEmbeddingModelConfigParams struct {
-	Column1 string `json:"column_1"`
-	Value   string `json:"value"`
-}
-
-func (q *Queries) SetEmbeddingModelConfig(ctx context.Context, arg SetEmbeddingModelConfigParams) error {
-	_, err := q.db.ExecContext(ctx, setEmbeddingModelConfig, arg.Column1, arg.Value)
-	return err
-}
-
-const setMLModelConfig = `-- name: SetMLModelConfig :exec
-INSERT INTO public.config (key, value)
-VALUES ('ml_model_path_category_' || $1::text, $2)
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-`
-
-type SetMLModelConfigParams struct {
-	Column1 string `json:"column_1"`
-	Value   string `json:"value"`
-}
-
-func (q *Queries) SetMLModelConfig(ctx context.Context, arg SetMLModelConfigParams) error {
-	_, err := q.db.ExecContext(ctx, setMLModelConfig, arg.Column1, arg.Value)
-	return err
-}
-
 const updateAccountAccessToken = `-- name: UpdateAccountAccessToken :one
 UPDATE public.account
 SET updated_at = NOW(), access_token = $2
@@ -2318,6 +2345,40 @@ WHERE id = $1
 func (q *Queries) UpdateGroupScannedAt(ctx context.Context, id int32) error {
 	_, err := q.db.ExecContext(ctx, updateGroupScannedAt, id)
 	return err
+}
+
+const updateModel = `-- name: UpdateModel :one
+UPDATE public.model
+SET name = $2,
+    description = $3,
+    category_id = $4
+WHERE id = $1
+RETURNING id, name, description, created_at, category_id
+`
+
+type UpdateModelParams struct {
+	ID          int32          `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	CategoryID  sql.NullInt32  `json:"category_id"`
+}
+
+func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (Model, error) {
+	row := q.db.QueryRowContext(ctx, updateModel,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.CategoryID,
+	)
+	var i Model
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.CategoryID,
+	)
+	return i, err
 }
 
 const updateModelScore = `-- name: UpdateModelScore :exec

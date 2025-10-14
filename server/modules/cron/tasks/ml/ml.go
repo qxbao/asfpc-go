@@ -51,17 +51,15 @@ func (s *MLService) ScoreProfilesCronjob() {
 	for _, category := range categories {
 		logger.Infof("Processing category: %s (ID: %d)", category.Name, category.ID)
 
-		// Get model config for this category
-		modelConfig, err := queries.GetMLModelConfig(ctx, strconv.Itoa(int(category.ID)))
-		var modelName string
+		// Get model for this category from model table
+		model, err := queries.GetModelByCategory(ctx, sql.NullInt32{Int32: category.ID, Valid: true})
 		if err != nil {
-			logger.Warnf("No model configured for category %s, using default", category.Name)
-			modelName = s.Server.GetConfig(ctx, "ML_SCORING_MODEL_NAME", "No")
-		} else {
-			modelName = modelConfig.Value
+			logger.Warnf("No model assigned to category %s. Skipping...", category.Name)
+			continue
 		}
 
-		if modelName == "No" {
+		modelName := model.Name
+		if modelName == "" {
 			logger.Infof("No model configured for category %s. Skipping...", category.Name)
 			continue
 		}
