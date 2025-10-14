@@ -54,7 +54,7 @@ func (s *MLService) ScoreProfilesCronjob() {
 		// Get model for this category from model table
 		model, err := queries.GetModelByCategory(ctx, sql.NullInt32{Int32: category.ID, Valid: true})
 		if err != nil {
-			logger.Warnf("No model assigned to category %s. Skipping...", category.Name)
+			logger.Infof("No model assigned to category %s. Skipping...", category.Name)
 			continue
 		}
 

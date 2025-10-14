@@ -28,3 +28,17 @@ class PromptService:
       else:
         template = template.replace(f"INSERT_{i+1}", arg, 1)
     return template
+
+  async def get_prompt_by_key_and_category(self, key: str, category_id: int) -> str | None:
+    try:
+      async with Database.get_session() as conn:
+        query = select(Prompt).where(
+          Prompt.service_name == key,
+          Prompt.category_id == category_id
+        ).order_by(Prompt.version.desc()).limit(1)
+        res = await conn.execute(query)
+        prompt = res.scalar_one_or_none()
+        return prompt.content if prompt else None
+    except Exception:
+      self.logger.exception("Exception occurred in get_prompt_by_key_and_category")
+      return None

@@ -206,13 +206,11 @@ class TaskNavigator:
     profile_service = ProfileService()
     prompt_service = PromptService()
 
-    # Get category-specific prompt if available
     if category_id:
       template = await prompt_service.get_prompt_by_key_and_category("self-embedding", int(category_id))
     else:
       template = await prompt_service.get_prompt("self-embedding")
     if not template:
-      # Fallback to default prompt
       template = await prompt_service.get_prompt("self-embedding")
     if not template:
       err_msg = "Prompt 'self-embedding' not found in database"

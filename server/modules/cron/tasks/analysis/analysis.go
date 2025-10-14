@@ -277,6 +277,10 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 	for _, category := range categories {
 		logger.Infof("Processing embedding for category: %s (ID: %d)", category.Name, category.ID)
 
+		// Embedding model is hard-coded (BGEM3) in Python, no need to query from DB
+		// Just proceed with embedding process
+		embeddingModel := "BAAI/bge-m3" // Hard-coded embedding model
+
 		profiles, err := queries.GetProfileIDForEmbedding(ctx, db.GetProfileIDForEmbeddingParams{
 			CategoryID: category.ID,
 			Limit:      int32(limit),
@@ -299,6 +303,7 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 		idStr := strings.Join(idStrs, ",")
 		output, err := pythonService.RunScript("--task=embed",
 			fmt.Sprintf("--targets=%s", idStr),
+			fmt.Sprintf("--embedding-model=%s", embeddingModel),
 			fmt.Sprintf("--category-id=%d", category.ID),
 		)
 
