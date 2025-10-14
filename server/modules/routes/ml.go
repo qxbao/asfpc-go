@@ -13,7 +13,7 @@ func InitMLRoutes(s *infras.Server) {
 	e.GET("/ml/export", service.ExportModel)
 	e.POST("/ml/train", service.Train)
 	e.DELETE("/ml/delete", service.DeleteModel)
-	
+
 	// ML Config routes
 	e.GET("/ml/config/all", s.GetAllCategoryMLConfigs)
 	e.GET("/ml/config/model/:category_id", s.GetMLModelConfig)

@@ -20,7 +20,7 @@ type MLService struct {
 	Server *infras.Server
 }
 
-type ScoringResult map[string] float64
+type ScoringResult map[string]float64
 
 var logger = lg.GetLogger("MachineLearningCronService")
 
@@ -50,7 +50,7 @@ func (s *MLService) ScoreProfilesCronjob() {
 	// Process each category
 	for _, category := range categories {
 		logger.Infof("Processing category: %s (ID: %d)", category.Name, category.ID)
-		
+
 		// Get model config for this category
 		modelConfig, err := queries.GetMLModelConfig(ctx, strconv.Itoa(int(category.ID)))
 		var modelName string

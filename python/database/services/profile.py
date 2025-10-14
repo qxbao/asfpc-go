@@ -26,7 +26,7 @@ class ProfileService:
         if category_id is not None:
           # Filter by category using the many-to-many relationship
           query = query.join(UserProfile.categories).where(UserProfile.categories.any(id=category_id))
-        
+
         res = await conn.execute(query)
         return list(res.scalars().all())
     except Exception:
