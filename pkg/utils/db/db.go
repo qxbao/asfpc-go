@@ -19,8 +19,6 @@ type ProfileAnalysisRow struct {
 	FacebookID   string          `json:"facebook_id"`
 	Name         sql.NullString  `json:"name"`
 	IsAnalyzed   sql.NullBool    `json:"is_analyzed"`
-	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
-	ModelScore   sql.NullFloat64 `json:"model_score"`
 	Categories   json.RawMessage `json:"categories"`
 	NonNullCount int32           `json:"non_null_count"`
 }
@@ -30,6 +28,13 @@ func ToNullString(ptr *string) sql.NullString {
 		return sql.NullString{String: *ptr, Valid: true}
 	}
 	return sql.NullString{Valid: false}
+}
+
+func ToNullInt32(ptr *int32) sql.NullInt32 {
+	if ptr != nil {
+		return sql.NullInt32{Int32: *ptr, Valid: true}
+	}
+	return sql.NullInt32{Valid: false}
 }
 
 func ExtractEntityName(entity *infras.EntityNameID) sql.NullString {
@@ -96,35 +101,6 @@ func ConvertGroupRow(row db.GetGroupsByAccountIdRow) GroupWithCategories {
 	} else {
 		var test any
 		if err := json.Unmarshal(row.Categories, &test); err != nil {
-			result.Categories = json.RawMessage([]byte("[]"))
-		} else {
-			result.Categories = json.RawMessage(row.Categories)
-		}
-	}
-
-	return result
-}
-
-func ConvertProfileAnalysisRow(row db.GetProfilesAnalysisPageRow) ProfileAnalysisRow {
-	result := ProfileAnalysisRow{
-		ID:           row.ID,
-		FacebookID:   row.FacebookID,
-		Name:         row.Name,
-		IsAnalyzed:   row.IsAnalyzed,
-		GeminiScore:  row.GeminiScore,
-		ModelScore:   row.ModelScore,
-		NonNullCount: row.NonNullCount,
-	}
-
-	// row.Categories is already db.NullableJSON which handles NULL by converting to []
-	// NullableJSON is []byte, so we can directly convert to json.RawMessage
-	if len(row.Categories) == 0 {
-		result.Categories = json.RawMessage([]byte("[]"))
-	} else {
-		// Validate that it's valid JSON before converting
-		var test interface{}
-		if err := json.Unmarshal(row.Categories, &test); err != nil {
-			// Invalid JSON, use empty array
 			result.Categories = json.RawMessage([]byte("[]"))
 		} else {
 			result.Categories = json.RawMessage(row.Categories)

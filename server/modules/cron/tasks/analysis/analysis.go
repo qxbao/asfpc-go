@@ -207,13 +207,18 @@ func (as *AnalysisService) geminiScoringTask(input infras.GeminiScoringTaskInput
 		panic(fmt.Errorf("failed to parse score: %v", err))
 	}
 
-	_, err = as.Server.Queries.UpdateGeminiAnalysisProfile(input.Ctx, db.UpdateGeminiAnalysisProfileParams{
-		ID:          input.Profile.ID,
-		GeminiScore: sql.NullFloat64{Float64: score, Valid: true},
-	})
-
+	err = as.Server.Queries.UpdateGeminiAnalysisProfile(input.Ctx, input.Profile.ID)
 	if err != nil {
-		panic(fmt.Errorf("failed to update profile: %v", err))
+		panic(fmt.Errorf("failed to update profile is_analyzed: %v", err))
+	}
+
+	err = as.Server.Queries.UpdateGeminiScore(input.Ctx, db.UpdateGeminiScoreParams{
+		UserProfileID: input.Profile.ID,
+		CategoryID:    input.Profile.CategoryID,
+		GeminiScore:   sql.NullFloat64{Float64: score, Valid: true},
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to update gemini score: %v", err))
 	}
 
 	return true
@@ -282,8 +287,8 @@ func (as *AnalysisService) SelfEmbeddingCronjob() {
 		embeddingModel := "BAAI/bge-m3" // Hard-coded embedding model
 
 		profiles, err := queries.GetProfileIDForEmbedding(ctx, db.GetProfileIDForEmbeddingParams{
-			CategoryID: category.ID,
-			Limit:      int32(limit),
+			Cid:   category.ID,
+			Limit: int32(limit),
 		})
 		if err != nil {
 			logger.Errorf("Failed to get profiles for embedding (category %s): %v", category.Name, err)

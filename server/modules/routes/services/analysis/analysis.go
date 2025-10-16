@@ -3,6 +3,7 @@ package analysis
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
@@ -36,11 +37,10 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 		*dto.Limit = 10
 	}
 
-	log.Infof("Fetching profiles with limit=%d, offset=%d", *dto.Limit, *dto.Page**dto.Limit)
-
 	profiles, err := queries.GetProfilesAnalysisPage(c.Request().Context(), db.GetProfilesAnalysisPageParams{
-		Limit:  *dto.Limit,
-		Offset: *dto.Page * *dto.Limit,
+		Limit:    *dto.Limit,
+		Offset:   *dto.Page * *dto.Limit,
+		CategoryID:  *dto.CategoryID,
 	})
 
 	if err != nil {
@@ -51,26 +51,6 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 	}
 
 	log.Infof("Retrieved %d profiles from database", len(profiles))
-
-	// Count total profiles in category 1 for debugging
-	categoryCount, err := queries.CountProfilesInCategory(c.Request().Context(), 1)
-	if err != nil {
-		log.Errorf("Failed to count profiles in category: %v", err)
-	} else {
-		log.Infof("Total profiles in category 1: %d", categoryCount)
-	}
-
-	// Log the first few profiles' categories to debug
-	categoriesFound := 0
-	for i := 0; i < len(profiles) && i < 10; i++ {
-		categoriesStr := string(profiles[i].Categories)
-		if categoriesStr != "[]" && categoriesStr != "" {
-			categoriesFound++
-			log.Infof("Profile %d (ID=%d, FacebookID=%s): Categories=%s",
-				i, profiles[i].ID, profiles[i].FacebookID, categoriesStr)
-		}
-	}
-	log.Infof("Found %d profiles with categories in first 10 results", categoriesFound)
 
 	count, err := queries.CountProfiles(c.Request().Context())
 	if err != nil {
@@ -188,7 +168,23 @@ func (as *AnalysisRoutingService) ResetProfilesModelScore(c echo.Context) error 
 
 func (as *AnalysisRoutingService) ExportProfiles(c echo.Context) error {
 	queries := as.Server.Queries
-	profiles, err := queries.GetProfilesForExport(c.Request().Context())
+	
+	// Get category_id from query parameter
+	categoryIDStr := c.QueryParam("category_id")
+	if categoryIDStr == "" {
+		return c.JSON(400, map[string]any{
+			"error": "category_id query parameter is required",
+		})
+	}
+	
+	categoryID, err := strconv.ParseInt(categoryIDStr, 10, 32)
+	if err != nil {
+		return c.JSON(400, map[string]any{
+			"error": "invalid category_id: " + err.Error(),
+		})
+	}
+	
+	profiles, err := queries.GetProfilesForExport(c.Request().Context(), int32(categoryID))
 	if err != nil {
 		return c.JSON(500, map[string]any{
 			"error": "failed to get profiles: " + err.Error(),
@@ -278,13 +274,13 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 			Phone:              profile.Phone,
 			ProfileUrl:         profile.ProfileUrl,
 			IsAnalyzed:         profile.IsAnalyzed,
-			GeminiScore:        profile.GeminiScore,
 		})
 		if err != nil {
 			logger.GetLogger("ARS").Errorf("Failed to import profile for Facebook ID %s: %v", profile.FacebookID, err)
 		}
 		err = as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
 			Pid:       p.ID,
+			Cid:       profile.CategoryID,
 			Embedding: profile.Embedding,
 		})
 		if err != nil {
@@ -317,9 +313,16 @@ func (as *AnalysisRoutingService) FindSimilarProfiles(c echo.Context) error {
 		})
 	}
 
+	if dto.CategoryID == nil {
+		return c.JSON(400, map[string]any{
+			"error": "category_id is required",
+		})
+	}
+
 	similarProfiles, err := as.Server.Queries.FindSimilarProfiles(c.Request().Context(), db.FindSimilarProfilesParams{
 		Pid:   *dto.ProfileID,
 		Limit: *dto.TopK,
+		Cid:   *dto.CategoryID,
 	})
 
 	if err != nil {

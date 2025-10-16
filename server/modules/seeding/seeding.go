@@ -39,7 +39,12 @@ func SeedData(queries *db.Queries) {
 	}
 
 	ctx := context.Background()
+
 	for key, value := range seed.Configs {
+		_, err := queries.GetConfigByKey(ctx, key)
+		if err == nil {
+			continue
+		}
 		_, err = queries.UpsertConfig(ctx, db.UpsertConfigParams{
 			Key: key, Value: value,
 		})

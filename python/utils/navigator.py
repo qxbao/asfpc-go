@@ -7,16 +7,17 @@ from typing import Any
 
 import pandas as pd
 
-from browser.account import AccountAutomationService
-from browser.group import GroupAutomationService
-from database.services.account import AccountService
-from database.services.config import ConfigService
-from database.services.group import GroupService
-from database.services.profile import ProfileService
-from database.services.prompt import PromptService
-from database.services.request import RequestService
+from browser import AccountAutomationService, GroupAutomationService
+from database.services import (
+  AccountService,
+  ConfigService,
+  GroupService,
+  ProfileService,
+  PromptService,
+  RequestService,
+)
 from ml import BGEM3EmbedModel, PotentialCustomerScoringModel
-from utils.dialog import DialogUtil
+from utils import DialogUtil
 
 
 class TaskNavigator:
@@ -88,12 +89,21 @@ class TaskNavigator:
       self.logger.info("Training model: %s (all categories)", model_name)
 
     ps = ProfileService()
-    profiles = await ps.get_training_profiles(category_id=category_id)
-    if not profiles:
+    profile_scores = await ps.get_training_profiles(category_id=category_id)
+    if not profile_scores:
       err_msg = f"No profiles available for training{f' in category {category_id}' if category_id else ''}"
       raise ValueError(err_msg)
-    self.logger.info("Found %d profiles for training", len(profiles))
-    input_df = pd.DataFrame([p.to_df() for p in profiles])
+    self.logger.info("Found %d profiles for training", len(profile_scores))
+    # Create DataFrame with profile data and gemini_score
+    input_data = []
+    for profile, gemini_score in profile_scores:
+      if not category_id:
+        err_msg = "--category-id is required for train-model task"
+        raise ValueError(err_msg)
+      profile_data = profile.to_df(category_id=category_id)
+      profile_data["gemini_score"] = gemini_score
+      input_data.append(profile_data)
+    input_df = pd.DataFrame(input_data)
     rs = RequestService()
     await rs.update_request(
       request_id, status=1, description="Preparing data for training...", progress=0.0
@@ -141,7 +151,6 @@ class TaskNavigator:
     id_set = {int(x) for x in targets.split(",")}
     id_list = list(id_set)
 
-    # Get category ID and load category-specific model path
     category_id = self.config.get("category-id", None)
     model_path_override = None
     if category_id:
@@ -151,6 +160,11 @@ class TaskNavigator:
         self.logger.info("Using category-specific ML model: %s", model_path_override)
         model_name = model_path_override
 
+    category_id_int = int(category_id) if category_id else None
+    if not category_id_int:
+      err_msg = "--category-id is required for predict task"
+      raise Exception(err_msg)
+
     model = PotentialCustomerScoringModel(
       model_name=model_name,
     )
@@ -159,10 +173,15 @@ class TaskNavigator:
     sem = asyncio.Semaphore(10)
 
     async def get_score(profile_id: int):
-      profile = await ps.get_profile_by_id(profile_id, with_embed=True)
-      if not profile:
+      result = await ps.get_profile_with_category_score(profile_id, category_id_int)
+      if not result:
         return None
-      input_df = pd.DataFrame(profile.to_df())
+      profile, existing_score = result
+
+      if existing_score is not None:
+        return existing_score
+
+      input_df = pd.DataFrame(profile.to_df(category_id=category_id_int))
       score = model.predict(input_df)
       if isinstance(score, list):
         score = score[0]
@@ -195,32 +214,33 @@ class TaskNavigator:
 
     # Get category ID and load category-specific model
     category_id = self.config.get("category-id", None)
+    if not category_id:
+      err_msg = "--category-id is required for embed task"
+      raise Exception(err_msg)
+
+    category_id_int = int(category_id)
     embedding_model_path = None
-    if category_id:
-      config_service = ConfigService()
-      embedding_model_path = await config_service.get_embedding_model_path(int(category_id))
-      if embedding_model_path:
-        self.logger.info("Using category-specific embedding model: %s", embedding_model_path)
+    config_service = ConfigService()
+    embedding_model_path = await config_service.get_embedding_model_path(category_id_int)
+    if embedding_model_path:
+      self.logger.info("Using category-specific embedding model: %s", embedding_model_path)
 
     model = BGEM3EmbedModel(model_path=embedding_model_path)
     profile_service = ProfileService()
     prompt_service = PromptService()
 
-    if category_id:
-      template = await prompt_service.get_prompt_by_key_and_category("self-embedding", int(category_id))
-    else:
-      template = await prompt_service.get_prompt("self-embedding")
-    if not template:
-      template = await prompt_service.get_prompt("self-embedding")
+    template = await prompt_service.get_prompt_by_key_and_category("self-embedding", category_id_int)
+
     if not template:
       err_msg = "Prompt 'self-embedding' not found in database"
       raise Exception(err_msg)
 
     sem = asyncio.Semaphore(10)
 
-    async def get_embedding(profile_id: int) -> list[float] | None:
-      profile = await profile_service.get_profile_by_id(profile_id)
+    async def get_embedding(profile_id: int, category_id: int) -> list[float] | None:
+      profile = await profile_service.get_profile_by_id(profile_id, category_id)
       if not profile:
+        self.logger.warning("Profile ID %d not found", profile_id)
         return None
       my_temp = template
       final_str = prompt_service.inject_prompt(
@@ -244,13 +264,13 @@ class TaskNavigator:
 
     async def semaphore_proc(sem, i):
       async with sem:
-        return await get_embedding(id_list[i])
+        return await get_embedding(id_list[i], category_id_int)
     tasks = [semaphore_proc(sem, i) for i in range(len(id_list))]
     results = await asyncio.gather(*tasks)
     success_count = 0
     for pid, emb in zip(id_list, results, strict=True):
       if emb is None:
         continue
-      if await profile_service.insert_profile_embedding(pid, emb):
+      if await profile_service.insert_profile_embedding(pid, category_id_int, emb):
         success_count += 1
     print(f"Embeddings generated for {success_count}/{len(id_list)} profiles")  # noqa: T201

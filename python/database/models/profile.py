@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import VARCHAR, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,7 +36,6 @@ class UserProfile(Base):
   email: Mapped[str | None] = mapped_column(VARCHAR(100), nullable=True)
   is_scanned: Mapped[bool] = mapped_column(nullable=False, default=False)
   is_analyzed: Mapped[bool] = mapped_column(nullable=False, default=False)
-  gemini_score: Mapped[float | None] = mapped_column(nullable=True)
   phone: Mapped[str | None] = mapped_column(VARCHAR(12), nullable=True)
   created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
   updated_at: Mapped[datetime] = mapped_column(
@@ -44,21 +43,35 @@ class UserProfile(Base):
   )
   scraped_by_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
   scraped_by: Mapped["Account"] = relationship(back_populates="scraped_profiles")
-  emb_profile: Mapped[Optional["EmbeddedProfile"]] = relationship(
-    back_populates="profile", lazy="selectin", uselist=False
+  emb_profiles: Mapped[list["EmbeddedProfile"]] = relationship(
+    back_populates="profile", lazy="selectin", foreign_keys="EmbeddedProfile.pid"
   )
   comments: Mapped[list["Comment"]] = relationship(back_populates="author")
   categories: Mapped[list["Category"]] = relationship(
     secondary="user_profile_category", back_populates="user_profiles"
   )
 
-  def to_df(self) -> dict:
-    """Convert profile data to a DataFrame"""
+  def to_df(self, category_id: int) -> dict:
+    """
+    Convert profile data to a DataFrame for a specific category
+
+    Args:
+        category_id: The category ID to get the embedding for
+
+    Returns:
+        Dictionary with profile features including category-specific embedding
+
+    """
+    embedding = None
+    for emb in self.emb_profiles:
+      if emb.cid == category_id:
+        embedding = emb.embedding
+        break
+
     return {
-      "embedding": [self.emb_profile.embedding if self.emb_profile else None],
+      "embedding": [embedding] if embedding is not None else [None],
       "gender": self.gender,
       "relationship_status": self.relationship_status,
       "locale": self.locale,
       "birthday": self.birthday,
-      "gemini_score": self.gemini_score,
     }

@@ -55,6 +55,7 @@ type EmbeddedProfile struct {
 	Pid       int32        `json:"pid"`
 	CreatedAt sql.NullTime `json:"created_at"`
 	Embedding interface{}  `json:"embedding"`
+	Cid       int32        `json:"cid"`
 }
 
 type FinancialAnalysis struct {
@@ -161,32 +162,32 @@ type Request struct {
 }
 
 type UserProfile struct {
-	ID                 int32           `json:"id"`
-	FacebookID         string          `json:"facebook_id"`
-	Name               sql.NullString  `json:"name"`
-	Bio                sql.NullString  `json:"bio"`
-	Location           sql.NullString  `json:"location"`
-	Work               sql.NullString  `json:"work"`
-	Education          sql.NullString  `json:"education"`
-	RelationshipStatus sql.NullString  `json:"relationship_status"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	ScrapedByID        int32           `json:"scraped_by_id"`
-	IsScanned          bool            `json:"is_scanned"`
-	Hometown           sql.NullString  `json:"hometown"`
-	Locale             string          `json:"locale"`
-	Gender             sql.NullString  `json:"gender"`
-	Birthday           sql.NullString  `json:"birthday"`
-	Email              sql.NullString  `json:"email"`
-	Phone              sql.NullString  `json:"phone"`
-	ProfileUrl         string          `json:"profile_url"`
-	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
-	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
-	ModelScore         sql.NullFloat64 `json:"model_score"`
+	ID                 int32          `json:"id"`
+	FacebookID         string         `json:"facebook_id"`
+	Name               sql.NullString `json:"name"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	ScrapedByID        int32          `json:"scraped_by_id"`
+	IsScanned          bool           `json:"is_scanned"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
+	ProfileUrl         string         `json:"profile_url"`
+	IsAnalyzed         sql.NullBool   `json:"is_analyzed"`
 }
 
 type UserProfileCategory struct {
-	UserProfileID int32     `json:"user_profile_id"`
-	CategoryID    int32     `json:"category_id"`
-	CreatedAt     time.Time `json:"created_at"`
+	UserProfileID int32           `json:"user_profile_id"`
+	CategoryID    int32           `json:"category_id"`
+	CreatedAt     time.Time       `json:"created_at"`
+	ModelScore    sql.NullFloat64 `json:"model_score"`
+	GeminiScore   sql.NullFloat64 `json:"gemini_score"`
 }

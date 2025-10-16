@@ -22,8 +22,9 @@ type GeminiEmbeddingTaskInput struct {
 }
 
 type FindSimilarProfilesDTO struct {
-	ProfileID *int32 `query:"profile_id" validate:"required"`
-	TopK      *int32 `query:"top_k" validate:"min=1,max=20"`
+	ProfileID  *int32 `query:"profile_id" validate:"required"`
+	CategoryID *int32 `query:"category_id" validate:"required"`
+	TopK       *int32 `query:"top_k" validate:"min=1,max=20"`
 }
 
 type AddAllProfilesToCategoryDTO struct {
