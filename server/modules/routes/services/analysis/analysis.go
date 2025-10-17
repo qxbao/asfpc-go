@@ -13,6 +13,20 @@ import (
 
 type AnalysisRoutingService infras.RoutingService
 
+// Helper function for consistent error responses
+func errorResponse(c echo.Context, statusCode int, message string) error {
+	return c.JSON(statusCode, map[string]any{
+		"error": message,
+	})
+}
+
+// Helper function for consistent success responses
+func successResponse(c echo.Context, data any) error {
+	return c.JSON(200, map[string]any{
+		"data": data,
+	})
+}
+
 func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 	log := logger.GetLogger("GetProfiles")
 	log.Info("Starting GetProfiles request")
@@ -22,9 +36,7 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 
 	if err := c.Bind(dto); err != nil {
 		log.Errorf("Failed to bind request: %v", err)
-		return c.JSON(400, map[string]any{
-			"error": "Invalid request body",
-		})
+		return errorResponse(c, 400, "Invalid request body")
 	}
 
 	if dto.Page == nil {
@@ -41,7 +53,7 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 	categoryIDStr := c.QueryParam("category_id")
 	var categoryID *int32
 	if categoryIDStr != "" {
-		if catID, err := strconv.ParseInt(categoryIDStr, 10, 32); err == nil {
+		if catID, err := strconv.Atoi(categoryIDStr); err == nil {
 			categoryID = new(int32)
 			*categoryID = int32(catID)
 			log.Infof("Filtering by category ID: %d", *categoryID)
@@ -63,9 +75,7 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 		})
 		if err != nil {
 			log.Errorf("Failed to get profiles by category from DB: %v", err)
-			return c.JSON(500, map[string]any{
-				"error": "failed to get profiles: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to get profiles: "+err.Error())
 		}
 
 		// Convert to expected format
@@ -87,9 +97,7 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 		count, err = queries.CountProfilesInCategory(c.Request().Context(), *categoryID)
 		if err != nil {
 			log.Errorf("Failed to count profiles in category: %v", err)
-			return c.JSON(500, map[string]any{
-				"error": "failed to count profiles: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to count profiles: "+err.Error())
 		}
 	} else {
 		// Get all profiles (original behavior)
@@ -99,17 +107,13 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 		})
 		if err != nil {
 			log.Errorf("Failed to get profiles from DB: %v", err)
-			return c.JSON(500, map[string]any{
-				"error": "failed to get profiles: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to get profiles: "+err.Error())
 		}
 
 		count, err = queries.CountProfiles(c.Request().Context())
 		if err != nil {
 			log.Errorf("Failed to count profiles: %v", err)
-			return c.JSON(500, map[string]any{
-				"error": "failed to count profiles: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to count profiles: "+err.Error())
 		}
 	}
 

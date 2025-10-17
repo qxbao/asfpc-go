@@ -11,6 +11,20 @@ import (
 
 type DataRoutingService infras.RoutingService
 
+// Helper function for consistent error responses
+func errorResponse(c echo.Context, statusCode int, message string) error {
+	return c.JSON(statusCode, map[string]any{
+		"error": message,
+	})
+}
+
+// Helper function for consistent success responses
+func successResponse(c echo.Context, data any) error {
+	return c.JSON(200, map[string]any{
+		"data": data,
+	})
+}
+
 func (ds *DataRoutingService) GetDataStats(c echo.Context) error {
 	queries := ds.Server.Queries
 	stats, err := queries.GetStats(c.Request().Context())
@@ -232,15 +246,11 @@ func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 	if categoryIDStr != "" {
 		categoryID, parseErr := strconv.Atoi(categoryIDStr)
 		if parseErr != nil {
-			return c.JSON(400, map[string]any{
-				"error": "Invalid category_id parameter",
-			})
+			return errorResponse(c, 400, "Invalid category_id parameter")
 		}
 		categoryData, err := queries.GetTimeSeriesDataByCategory(c.Request().Context(), int32(categoryID))
 		if err != nil {
-			return c.JSON(500, map[string]any{
-				"error": "failed to get time series data: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to get time series data: "+err.Error())
 		}
 		
 		// Convert category data to standard format
@@ -254,9 +264,7 @@ func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 	} else {
 		data, err = queries.GetTimeSeriesData(c.Request().Context())
 		if err != nil {
-			return c.JSON(500, map[string]any{
-				"error": "failed to get time series data: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to get time series data: "+err.Error())
 		}
 	}
 
@@ -264,9 +272,7 @@ func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 		data = make([]db.GetTimeSeriesDataRow, 0)
 	}
 
-	return c.JSON(200, map[string]any{
-		"data": data,
-	})
+	return successResponse(c, data)
 }
 
 type Data struct {
@@ -285,15 +291,11 @@ func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 	if categoryIDStr != "" {
 		categoryID, parseErr := strconv.Atoi(categoryIDStr)
 		if parseErr != nil {
-			return c.JSON(400, map[string]any{
-				"error": "Invalid category_id parameter",
-			})
+			return errorResponse(c, 400, "Invalid category_id parameter")
 		}
 		categoryData, err := queries.GetScoreDistributionByCategory(c.Request().Context(), int32(categoryID))
 		if err != nil {
-			return c.JSON(500, map[string]any{
-				"error": "failed to get score distribution: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to get score distribution: "+err.Error())
 		}
 		
 		// Convert category data to standard format
@@ -308,9 +310,7 @@ func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 	} else {
 		scoreDistribution, err = queries.GetScoreDistribution(c.Request().Context())
 		if err != nil {
-			return c.JSON(500, map[string]any{
-				"error": "failed to get score distribution: " + err.Error(),
-			})
+			return errorResponse(c, 500, "failed to get score distribution: "+err.Error())
 		}
 	}
 
@@ -328,7 +328,5 @@ func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(200, map[string]any{
-		"data": data,
-	})
+	return successResponse(c, data)
 }
