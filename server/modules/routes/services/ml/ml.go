@@ -104,16 +104,12 @@ func (s *MLRoutingService) trainingTask(requestId int32, dto *infras.MLTrainDTO)
 	}
 
 	ctx := context.Background()
-	categoryID := sql.NullInt32{Valid: false}
-	if dto.CategoryID != nil {
-		categoryID = sql.NullInt32{Int32: *dto.CategoryID, Valid: true}
-	}
 
 	description := fmt.Sprintf("Model trained on %s", time.Now().Format("2006-01-02 15:04:05"))
 	_, err = s.Server.Queries.CreateModel(ctx, db.CreateModelParams{
 		Name:        *dto.ModelName,
 		Description: sql.NullString{String: description, Valid: true},
-		CategoryID:  categoryID,
+		CategoryID:  sql.NullInt32{Valid: false},
 	})
 	if err != nil {
 		logger.Errorf("Failed to create model row in database for %s: %v", *dto.ModelName, err)

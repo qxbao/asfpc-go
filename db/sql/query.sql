@@ -138,14 +138,18 @@ SELECT
   up.facebook_id,
   up.name,
   up.is_analyzed,
-  up.gemini_score,
-  up.model_score,
-  (COALESCE((
-    SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'description', c.description))
-    FROM public.user_profile_category upc
-    JOIN public.category c ON c.id = upc.category_id
-    WHERE upc.user_profile_id = up.id
-  ), '[]'::json))::jsonb as categories,
+  (
+    SELECT upc.model_score 
+    FROM public.user_profile_category upc 
+    WHERE upc.user_profile_id = up.id 
+    AND upc.category_id = $3
+  ) as model_score,
+  (
+    SELECT upc.gemini_score 
+    FROM public.user_profile_category upc 
+    WHERE upc.user_profile_id = up.id 
+    AND upc.category_id = $3
+  ) as gemini_score,
   ((COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -159,7 +163,7 @@ SELECT
   (COALESCE(up.phone, '') != '')::int)::int AS non_null_count
 FROM public.user_profile up
 WHERE up.is_scanned = true
-ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
+ORDER BY non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2;
 
 -- name: GetProfilesAnalysisPageByCategory :many
@@ -219,22 +223,23 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
   (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
-  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(DISTINCT upc.user_profile_id) FROM public.user_profile_category upc WHERE upc.model_score IS NOT NULL) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles;
 
 -- name: GetProfileIDForEmbedding :many
 SELECT up.id FROM public.user_profile up
 JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
-WHERE up.id NOT IN (
-  SELECT pid FROM public.embedded_profile
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.embedded_profile ep 
+  WHERE ep.pid = up.id AND ep.cid = $1
 ) AND up.is_scanned = true 
 AND upc.category_id = $1
 LIMIT $2;
 
 -- name: UpsertEmbeddedProfiles :exec
-INSERT INTO public.embedded_profile (pid, embedding, created_at)
-VALUES ($1, $2, NOW())
-ON CONFLICT (pid) DO UPDATE SET
+INSERT INTO public.embedded_profile (pid, cid, embedding, created_at)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (pid, cid) DO UPDATE SET
     embedding = EXCLUDED.embedding,
     created_at = NOW();
 
@@ -249,16 +254,19 @@ WHERE id = $1
 RETURNING *;
 
 -- name: ResetProfilesModelScore :exec
-UPDATE public.user_profile
+UPDATE public.user_profile_category
 SET model_score = NULL;
 
--- name: UpdateGeminiAnalysisProfile :one
+-- name: UpdateGeminiAnalysisProfile :exec
 UPDATE public.user_profile
-SET gemini_score = $2,
-    is_analyzed = TRUE,
+SET is_analyzed = TRUE,
     updated_at = NOW()
-WHERE id = $1
-RETURNING gemini_score;
+WHERE id = $1;
+
+-- name: UpdateGeminiScore :exec
+UPDATE public.user_profile_category
+SET gemini_score = $3
+WHERE user_profile_id = $1 AND category_id = $2;
 
 -- name: UpdateProfileAfterScan :one
 UPDATE public.user_profile
@@ -280,25 +288,26 @@ WHERE id = $1
 RETURNING *;
 
 -- name: GetProfilesForExport :many
-SELECT up.*, ep.embedding FROM public.user_profile up
-JOIN public.embedded_profile ep ON up.id = ep.pid;
+SELECT up.*, ep.embedding, ep.cid as category_id FROM public.user_profile up
+JOIN public.embedded_profile ep ON up.id = ep.pid
+WHERE ep.cid = $1;
 
 -- name: GetProfilesForScoring :many
 SELECT up.id FROM public.user_profile up
-JOIN public.embedded_profile ep ON up.id = ep.pid
+JOIN public.embedded_profile ep ON up.id = ep.pid AND ep.cid = $1
 JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
-WHERE up.is_scanned = true AND up.model_score IS NULL
+WHERE up.is_scanned = true AND upc.model_score IS NULL
 AND upc.category_id = $1
 LIMIT $2;
 
 -- name: UpdateModelScore :exec
-UPDATE public.user_profile
-SET model_score = $2
-WHERE id = $1;
+UPDATE public.user_profile_category
+SET model_score = $3
+WHERE user_profile_id = $1 AND category_id = $2;
 
 -- name: ImportProfile :one
-INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 ON CONFLICT (facebook_id) DO UPDATE SET
     name = EXCLUDED.name,
     bio = EXCLUDED.bio,
@@ -315,8 +324,7 @@ ON CONFLICT (facebook_id) DO UPDATE SET
     email = EXCLUDED.email,
     phone = EXCLUDED.phone,
     profile_url = EXCLUDED.profile_url,
-    is_analyzed = EXCLUDED.is_analyzed,
-    gemini_score = EXCLUDED.gemini_score
+    is_analyzed = EXCLUDED.is_analyzed
 RETURNING *;
 
 -- name: DeleteJunkProfiles :one
@@ -483,7 +491,7 @@ WHERE id = $1;
 SELECT * FROM public.request WHERE id = $1;
 
 -- name: GetProfileEmbedding :one
-SELECT embedding FROM public.embedded_profile WHERE pid = $1;
+SELECT embedding FROM public.embedded_profile WHERE pid = $1 AND cid = $2;
 
 -- name: FindSimilarProfiles :many
 SELECT
@@ -491,13 +499,13 @@ SELECT
   p.profile_url as profile_url,
   p.name AS profile_name,
   CAST(1 - (ep.embedding <=> (
-	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1 AND embedded_profile.cid = $3
   )) AS DOUBLE PRECISION) AS similarity
 FROM embedded_profile ep
 JOIN user_profile p ON p.id = ep.pid
-WHERE ep.pid != $1
+WHERE ep.pid != $1 AND ep.cid = $3
 ORDER BY ep.embedding <=> (
-	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1 AND embedded_profile.cid = $3
   )
 LIMIT $2;
 
@@ -509,7 +517,7 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
   (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
-  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(DISTINCT user_profile_id) FROM public.user_profile_category WHERE model_score IS NOT NULL) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles,
   (SELECT COUNT(*) FROM public.account) AS total_accounts,
   (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
@@ -553,7 +561,7 @@ gemini_counts AS (
       WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
     END as score_range,
     COUNT(*) as gemini_count
-  FROM public.user_profile
+  FROM public.user_profile_category
   WHERE gemini_score IS NOT NULL
   GROUP BY score_range
 ),
@@ -567,7 +575,7 @@ model_counts AS (
       WHEN model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
     END as score_range,
     COUNT(*) as model_count
-  FROM public.user_profile
+  FROM public.user_profile_category
   WHERE model_score IS NOT NULL
   GROUP BY score_range
 )

@@ -171,7 +171,8 @@ CREATE TABLE public.embedded_profile (
     id integer NOT NULL,
     pid integer NOT NULL,
     created_at timestamp without time zone DEFAULT now(),
-    embedding public.vector(1024)
+    embedding public.vector(1024),
+    cid integer NOT NULL
 );
 
 
@@ -571,9 +572,7 @@ CREATE TABLE public.user_profile (
     email character varying(100),
     phone character varying(12),
     profile_url character varying DEFAULT 'NOT_SPECIFIED'::character varying NOT NULL,
-    is_analyzed boolean DEFAULT false,
-    gemini_score double precision,
-    model_score double precision
+    is_analyzed boolean DEFAULT false
 );
 
 
@@ -584,7 +583,9 @@ CREATE TABLE public.user_profile (
 CREATE TABLE public.user_profile_category (
     user_profile_id integer NOT NULL,
     category_id integer NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    model_score double precision,
+    gemini_score double precision
 );
 
 
@@ -774,7 +775,7 @@ ALTER TABLE ONLY public.config
 --
 
 ALTER TABLE ONLY public.embedded_profile
-    ADD CONSTRAINT embedded_profile_pid_key UNIQUE (pid);
+    ADD CONSTRAINT embedded_profile_pid_key UNIQUE (pid, cid);
 
 
 --
@@ -1028,11 +1029,11 @@ ALTER TABLE ONLY public.comment
 
 
 --
--- Name: embedded_profile embedded_profile_pid_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: embedded_profile embedded_profile_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.embedded_profile
-    ADD CONSTRAINT embedded_profile_pid_fk FOREIGN KEY (pid) REFERENCES public.user_profile(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT embedded_profile_category_id_fkey FOREIGN KEY (cid) REFERENCES public.category(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --

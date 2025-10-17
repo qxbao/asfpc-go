@@ -207,7 +207,23 @@ func (as *AnalysisRoutingService) ResetProfilesModelScore(c echo.Context) error 
 
 func (as *AnalysisRoutingService) ExportProfiles(c echo.Context) error {
 	queries := as.Server.Queries
-	profiles, err := queries.GetProfilesForExport(c.Request().Context())
+	
+	// Get category_id from query parameter
+	categoryIDStr := c.QueryParam("category_id")
+	if categoryIDStr == "" {
+		return c.JSON(400, map[string]any{
+			"error": "category_id query parameter is required",
+		})
+	}
+	
+	categoryID, err := strconv.ParseInt(categoryIDStr, 10, 32)
+	if err != nil {
+		return c.JSON(400, map[string]any{
+			"error": "invalid category_id: " + err.Error(),
+		})
+	}
+	
+	profiles, err := queries.GetProfilesForExport(c.Request().Context(), int32(categoryID))
 	if err != nil {
 		return c.JSON(500, map[string]any{
 			"error": "failed to get profiles: " + err.Error(),
@@ -297,13 +313,13 @@ func (as *AnalysisRoutingService) ImportProfiles(c echo.Context) error {
 			Phone:              profile.Phone,
 			ProfileUrl:         profile.ProfileUrl,
 			IsAnalyzed:         profile.IsAnalyzed,
-			GeminiScore:        profile.GeminiScore,
 		})
 		if err != nil {
 			logger.GetLogger("ARS").Errorf("Failed to import profile for Facebook ID %s: %v", profile.FacebookID, err)
 		}
 		err = as.Server.Queries.UpsertEmbeddedProfiles(c.Request().Context(), db.UpsertEmbeddedProfilesParams{
 			Pid:       p.ID,
+			Cid:       profile.CategoryID,
 			Embedding: profile.Embedding,
 		})
 		if err != nil {
@@ -336,9 +352,16 @@ func (as *AnalysisRoutingService) FindSimilarProfiles(c echo.Context) error {
 		})
 	}
 
+	if dto.CategoryID == nil {
+		return c.JSON(400, map[string]any{
+			"error": "category_id is required",
+		})
+	}
+
 	similarProfiles, err := as.Server.Queries.FindSimilarProfiles(c.Request().Context(), db.FindSimilarProfilesParams{
 		Pid:   *dto.ProfileID,
 		Limit: *dto.TopK,
+		Cid:   *dto.CategoryID,
 	})
 
 	if err != nil {

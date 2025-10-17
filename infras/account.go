@@ -8,8 +8,9 @@ type CreateAccountDTO struct {
 }
 
 type QueryWithPageDTO struct {
-	Page  *int32 `query:"page"`
-	Limit *int32 `query:"limit"`
+	Page       *int32 `query:"page"`
+	Limit      *int32 `query:"limit"`
+	CategoryID *int32 `query:"category_id"`
 }
 
 type GetAccountDTO struct {

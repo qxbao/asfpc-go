@@ -337,7 +337,7 @@ INSERT INTO public.user_profile (facebook_id, name, scraped_by_id, created_at, u
 VALUES ($1, $2, $3, NOW(), NOW())
 ON CONFLICT (facebook_id) DO UPDATE SET
     id = EXCLUDED.id
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed
 `
 
 type CreateProfileParams struct {
@@ -370,8 +370,6 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (U
 		&i.Phone,
 		&i.ProfileUrl,
 		&i.IsAnalyzed,
-		&i.GeminiScore,
-		&i.ModelScore,
 	)
 	return i, err
 }
@@ -561,13 +559,13 @@ SELECT
   p.profile_url as profile_url,
   p.name AS profile_name,
   CAST(1 - (ep.embedding <=> (
-	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1 AND embedded_profile.cid = $3
   )) AS DOUBLE PRECISION) AS similarity
 FROM embedded_profile ep
 JOIN user_profile p ON p.id = ep.pid
-WHERE ep.pid != $1
+WHERE ep.pid != $1 AND ep.cid = $3
 ORDER BY ep.embedding <=> (
-	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1
+	SELECT embedding FROM public.embedded_profile WHERE embedded_profile.pid = $1 AND embedded_profile.cid = $3
   )
 LIMIT $2
 `
@@ -575,6 +573,7 @@ LIMIT $2
 type FindSimilarProfilesParams struct {
 	Pid   int32 `json:"pid"`
 	Limit int32 `json:"limit"`
+	Cid   int32 `json:"cid"`
 }
 
 type FindSimilarProfilesRow struct {
@@ -585,7 +584,7 @@ type FindSimilarProfilesRow struct {
 }
 
 func (q *Queries) FindSimilarProfiles(ctx context.Context, arg FindSimilarProfilesParams) ([]FindSimilarProfilesRow, error) {
-	rows, err := q.db.QueryContext(ctx, findSimilarProfiles, arg.Pid, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, findSimilarProfiles, arg.Pid, arg.Limit, arg.Cid)
 	if err != nil {
 		return nil, err
 	}
@@ -866,7 +865,7 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
   (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
-  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(DISTINCT user_profile_id) FROM public.user_profile_category WHERE model_score IS NOT NULL) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles,
   (SELECT COUNT(*) FROM public.account) AS total_accounts,
   (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
@@ -1286,34 +1285,32 @@ func (q *Queries) GetOKAccountIds(ctx context.Context) ([]int32, error) {
 }
 
 const getProfileById = `-- name: GetProfileById :one
-SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score, COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json)::jsonb as categories
+SELECT id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, COALESCE((SELECT json_agg(c) FROM public.user_profile_category c WHERE c.user_profile_id = up.id), '[]'::json)::jsonb as categories
 FROM public.user_profile up WHERE id = $1
 `
 
 type GetProfileByIdRow struct {
-	ID                 int32           `json:"id"`
-	FacebookID         string          `json:"facebook_id"`
-	Name               sql.NullString  `json:"name"`
-	Bio                sql.NullString  `json:"bio"`
-	Location           sql.NullString  `json:"location"`
-	Work               sql.NullString  `json:"work"`
-	Education          sql.NullString  `json:"education"`
-	RelationshipStatus sql.NullString  `json:"relationship_status"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	ScrapedByID        int32           `json:"scraped_by_id"`
-	IsScanned          bool            `json:"is_scanned"`
-	Hometown           sql.NullString  `json:"hometown"`
-	Locale             string          `json:"locale"`
-	Gender             sql.NullString  `json:"gender"`
-	Birthday           sql.NullString  `json:"birthday"`
-	Email              sql.NullString  `json:"email"`
-	Phone              sql.NullString  `json:"phone"`
-	ProfileUrl         string          `json:"profile_url"`
-	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
-	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
-	ModelScore         sql.NullFloat64 `json:"model_score"`
-	Categories         NullableJSON    `json:"categories"`
+	ID                 int32          `json:"id"`
+	FacebookID         string         `json:"facebook_id"`
+	Name               sql.NullString `json:"name"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	ScrapedByID        int32          `json:"scraped_by_id"`
+	IsScanned          bool           `json:"is_scanned"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
+	ProfileUrl         string         `json:"profile_url"`
+	IsAnalyzed         sql.NullBool   `json:"is_analyzed"`
+	Categories         NullableJSON   `json:"categories"`
 }
 
 func (q *Queries) GetProfileById(ctx context.Context, id int32) (GetProfileByIdRow, error) {
@@ -1340,19 +1337,22 @@ func (q *Queries) GetProfileById(ctx context.Context, id int32) (GetProfileByIdR
 		&i.Phone,
 		&i.ProfileUrl,
 		&i.IsAnalyzed,
-		&i.GeminiScore,
-		&i.ModelScore,
 		&i.Categories,
 	)
 	return i, err
 }
 
 const getProfileEmbedding = `-- name: GetProfileEmbedding :one
-SELECT embedding FROM public.embedded_profile WHERE pid = $1
+SELECT embedding FROM public.embedded_profile WHERE pid = $1 AND cid = $2
 `
 
-func (q *Queries) GetProfileEmbedding(ctx context.Context, pid int32) (interface{}, error) {
-	row := q.db.QueryRowContext(ctx, getProfileEmbedding, pid)
+type GetProfileEmbeddingParams struct {
+	Pid int32 `json:"pid"`
+	Cid int32 `json:"cid"`
+}
+
+func (q *Queries) GetProfileEmbedding(ctx context.Context, arg GetProfileEmbeddingParams) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, getProfileEmbedding, arg.Pid, arg.Cid)
 	var embedding interface{}
 	err := row.Scan(&embedding)
 	return embedding, err
@@ -1361,20 +1361,21 @@ func (q *Queries) GetProfileEmbedding(ctx context.Context, pid int32) (interface
 const getProfileIDForEmbedding = `-- name: GetProfileIDForEmbedding :many
 SELECT up.id FROM public.user_profile up
 JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
-WHERE up.id NOT IN (
-  SELECT pid FROM public.embedded_profile
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.embedded_profile ep 
+  WHERE ep.pid = up.id AND ep.cid = $1
 ) AND up.is_scanned = true 
 AND upc.category_id = $1
 LIMIT $2
 `
 
 type GetProfileIDForEmbeddingParams struct {
-	CategoryID int32 `json:"category_id"`
-	Limit      int32 `json:"limit"`
+	Cid   int32 `json:"cid"`
+	Limit int32 `json:"limit"`
 }
 
 func (q *Queries) GetProfileIDForEmbedding(ctx context.Context, arg GetProfileIDForEmbeddingParams) ([]int32, error) {
-	rows, err := q.db.QueryContext(ctx, getProfileIDForEmbedding, arg.CategoryID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, getProfileIDForEmbedding, arg.Cid, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1401,7 +1402,7 @@ SELECT
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
   (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
-  (SELECT COUNT(*) FROM public.user_profile WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(DISTINCT upc.user_profile_id) FROM public.user_profile_category upc WHERE upc.model_score IS NOT NULL) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles
 `
 
@@ -1427,7 +1428,7 @@ func (q *Queries) GetProfileStats(ctx context.Context) (GetProfileStatsRow, erro
 }
 
 const getProfilesAnalysisCronjob = `-- name: GetProfilesAnalysisCronjob :many
-SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score,
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed,
   upc.category_id,
   (COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
@@ -1454,30 +1455,28 @@ type GetProfilesAnalysisCronjobParams struct {
 }
 
 type GetProfilesAnalysisCronjobRow struct {
-	ID                 int32           `json:"id"`
-	FacebookID         string          `json:"facebook_id"`
-	Name               sql.NullString  `json:"name"`
-	Bio                sql.NullString  `json:"bio"`
-	Location           sql.NullString  `json:"location"`
-	Work               sql.NullString  `json:"work"`
-	Education          sql.NullString  `json:"education"`
-	RelationshipStatus sql.NullString  `json:"relationship_status"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	ScrapedByID        int32           `json:"scraped_by_id"`
-	IsScanned          bool            `json:"is_scanned"`
-	Hometown           sql.NullString  `json:"hometown"`
-	Locale             string          `json:"locale"`
-	Gender             sql.NullString  `json:"gender"`
-	Birthday           sql.NullString  `json:"birthday"`
-	Email              sql.NullString  `json:"email"`
-	Phone              sql.NullString  `json:"phone"`
-	ProfileUrl         string          `json:"profile_url"`
-	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
-	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
-	ModelScore         sql.NullFloat64 `json:"model_score"`
-	CategoryID         int32           `json:"category_id"`
-	NonNullCount       int32           `json:"non_null_count"`
+	ID                 int32          `json:"id"`
+	FacebookID         string         `json:"facebook_id"`
+	Name               sql.NullString `json:"name"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	ScrapedByID        int32          `json:"scraped_by_id"`
+	IsScanned          bool           `json:"is_scanned"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
+	ProfileUrl         string         `json:"profile_url"`
+	IsAnalyzed         sql.NullBool   `json:"is_analyzed"`
+	CategoryID         int32          `json:"category_id"`
+	NonNullCount       int32          `json:"non_null_count"`
 }
 
 func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, arg GetProfilesAnalysisCronjobParams) ([]GetProfilesAnalysisCronjobRow, error) {
@@ -1510,8 +1509,6 @@ func (q *Queries) GetProfilesAnalysisCronjob(ctx context.Context, arg GetProfile
 			&i.Phone,
 			&i.ProfileUrl,
 			&i.IsAnalyzed,
-			&i.GeminiScore,
-			&i.ModelScore,
 			&i.CategoryID,
 			&i.NonNullCount,
 		); err != nil {
@@ -1534,14 +1531,18 @@ SELECT
   up.facebook_id,
   up.name,
   up.is_analyzed,
-  up.gemini_score,
-  up.model_score,
-  (COALESCE((
-    SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'description', c.description))
-    FROM public.user_profile_category upc
-    JOIN public.category c ON c.id = upc.category_id
-    WHERE upc.user_profile_id = up.id
-  ), '[]'::json))::jsonb as categories,
+  (
+    SELECT upc.model_score 
+    FROM public.user_profile_category upc 
+    WHERE upc.user_profile_id = up.id 
+    AND upc.category_id = $3
+  ) as model_score,
+  (
+    SELECT upc.gemini_score 
+    FROM public.user_profile_category upc 
+    WHERE upc.user_profile_id = up.id 
+    AND upc.category_id = $3
+  ) as gemini_score,
   ((COALESCE(up.bio, '') != '')::int +
   (COALESCE(up.location, '') != '')::int +
   (COALESCE(up.work, '') != '')::int +
@@ -1555,13 +1556,14 @@ SELECT
   (COALESCE(up.phone, '') != '')::int)::int AS non_null_count
 FROM public.user_profile up
 WHERE up.is_scanned = true
-ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
+ORDER BY non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2
 `
 
 type GetProfilesAnalysisPageParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	Limit      int32 `json:"limit"`
+	Offset     int32 `json:"offset"`
+	CategoryID int32 `json:"category_id"`
 }
 
 type GetProfilesAnalysisPageRow struct {
@@ -1569,14 +1571,13 @@ type GetProfilesAnalysisPageRow struct {
 	FacebookID   string          `json:"facebook_id"`
 	Name         sql.NullString  `json:"name"`
 	IsAnalyzed   sql.NullBool    `json:"is_analyzed"`
-	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
 	ModelScore   sql.NullFloat64 `json:"model_score"`
-	Categories   NullableJSON    `json:"categories"`
+	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
 	NonNullCount int32           `json:"non_null_count"`
 }
 
 func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAnalysisPageParams) ([]GetProfilesAnalysisPageRow, error) {
-	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisPage, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisPage, arg.Limit, arg.Offset, arg.CategoryID)
 	if err != nil {
 		return nil, err
 	}
@@ -1589,9 +1590,8 @@ func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAn
 			&i.FacebookID,
 			&i.Name,
 			&i.IsAnalyzed,
-			&i.GeminiScore,
 			&i.ModelScore,
-			&i.Categories,
+			&i.GeminiScore,
 			&i.NonNullCount,
 		); err != nil {
 			return nil, err
@@ -1689,38 +1689,38 @@ func (q *Queries) GetProfilesAnalysisPageByCategory(ctx context.Context, arg Get
 }
 
 const getProfilesForExport = `-- name: GetProfilesForExport :many
-SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score, ep.embedding FROM public.user_profile up
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, ep.embedding, ep.cid as category_id FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid
+WHERE ep.cid = $1
 `
 
 type GetProfilesForExportRow struct {
-	ID                 int32           `json:"id"`
-	FacebookID         string          `json:"facebook_id"`
-	Name               sql.NullString  `json:"name"`
-	Bio                sql.NullString  `json:"bio"`
-	Location           sql.NullString  `json:"location"`
-	Work               sql.NullString  `json:"work"`
-	Education          sql.NullString  `json:"education"`
-	RelationshipStatus sql.NullString  `json:"relationship_status"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	ScrapedByID        int32           `json:"scraped_by_id"`
-	IsScanned          bool            `json:"is_scanned"`
-	Hometown           sql.NullString  `json:"hometown"`
-	Locale             string          `json:"locale"`
-	Gender             sql.NullString  `json:"gender"`
-	Birthday           sql.NullString  `json:"birthday"`
-	Email              sql.NullString  `json:"email"`
-	Phone              sql.NullString  `json:"phone"`
-	ProfileUrl         string          `json:"profile_url"`
-	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
-	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
-	ModelScore         sql.NullFloat64 `json:"model_score"`
-	Embedding          interface{}     `json:"embedding"`
+	ID                 int32          `json:"id"`
+	FacebookID         string         `json:"facebook_id"`
+	Name               sql.NullString `json:"name"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	ScrapedByID        int32          `json:"scraped_by_id"`
+	IsScanned          bool           `json:"is_scanned"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
+	ProfileUrl         string         `json:"profile_url"`
+	IsAnalyzed         sql.NullBool   `json:"is_analyzed"`
+	Embedding          interface{}    `json:"embedding"`
+	CategoryID         int32          `json:"category_id"`
 }
 
-func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExportRow, error) {
-	rows, err := q.db.QueryContext(ctx, getProfilesForExport)
+func (q *Queries) GetProfilesForExport(ctx context.Context, cid int32) ([]GetProfilesForExportRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesForExport, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1749,9 +1749,8 @@ func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExp
 			&i.Phone,
 			&i.ProfileUrl,
 			&i.IsAnalyzed,
-			&i.GeminiScore,
-			&i.ModelScore,
 			&i.Embedding,
+			&i.CategoryID,
 		); err != nil {
 			return nil, err
 		}
@@ -1768,20 +1767,20 @@ func (q *Queries) GetProfilesForExport(ctx context.Context) ([]GetProfilesForExp
 
 const getProfilesForScoring = `-- name: GetProfilesForScoring :many
 SELECT up.id FROM public.user_profile up
-JOIN public.embedded_profile ep ON up.id = ep.pid
+JOIN public.embedded_profile ep ON up.id = ep.pid AND ep.cid = $1
 JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
-WHERE up.is_scanned = true AND up.model_score IS NULL
+WHERE up.is_scanned = true AND upc.model_score IS NULL
 AND upc.category_id = $1
 LIMIT $2
 `
 
 type GetProfilesForScoringParams struct {
-	CategoryID int32 `json:"category_id"`
-	Limit      int32 `json:"limit"`
+	Cid   int32 `json:"cid"`
+	Limit int32 `json:"limit"`
 }
 
 func (q *Queries) GetProfilesForScoring(ctx context.Context, arg GetProfilesForScoringParams) ([]int32, error) {
-	rows, err := q.db.QueryContext(ctx, getProfilesForScoring, arg.CategoryID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, getProfilesForScoring, arg.Cid, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1804,7 +1803,7 @@ func (q *Queries) GetProfilesForScoring(ctx context.Context, arg GetProfilesForS
 }
 
 const getProfilesToScan = `-- name: GetProfilesToScan :many
-SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score, a.access_token, a.id as account_id
+SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, a.access_token, a.id as account_id
 FROM public.user_profile up
 JOIN public.account a ON up.scraped_by_id = a.id
 WHERE up.is_scanned = false AND a.is_block = false AND a.access_token IS NOT NULL
@@ -1812,30 +1811,28 @@ ORDER BY up.updated_at ASC LIMIT $1
 `
 
 type GetProfilesToScanRow struct {
-	ID                 int32           `json:"id"`
-	FacebookID         string          `json:"facebook_id"`
-	Name               sql.NullString  `json:"name"`
-	Bio                sql.NullString  `json:"bio"`
-	Location           sql.NullString  `json:"location"`
-	Work               sql.NullString  `json:"work"`
-	Education          sql.NullString  `json:"education"`
-	RelationshipStatus sql.NullString  `json:"relationship_status"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	ScrapedByID        int32           `json:"scraped_by_id"`
-	IsScanned          bool            `json:"is_scanned"`
-	Hometown           sql.NullString  `json:"hometown"`
-	Locale             string          `json:"locale"`
-	Gender             sql.NullString  `json:"gender"`
-	Birthday           sql.NullString  `json:"birthday"`
-	Email              sql.NullString  `json:"email"`
-	Phone              sql.NullString  `json:"phone"`
-	ProfileUrl         string          `json:"profile_url"`
-	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
-	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
-	ModelScore         sql.NullFloat64 `json:"model_score"`
-	AccessToken        sql.NullString  `json:"access_token"`
-	AccountID          int32           `json:"account_id"`
+	ID                 int32          `json:"id"`
+	FacebookID         string         `json:"facebook_id"`
+	Name               sql.NullString `json:"name"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	ScrapedByID        int32          `json:"scraped_by_id"`
+	IsScanned          bool           `json:"is_scanned"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
+	ProfileUrl         string         `json:"profile_url"`
+	IsAnalyzed         sql.NullBool   `json:"is_analyzed"`
+	AccessToken        sql.NullString `json:"access_token"`
+	AccountID          int32          `json:"account_id"`
 }
 
 func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProfilesToScanRow, error) {
@@ -1868,8 +1865,6 @@ func (q *Queries) GetProfilesToScan(ctx context.Context, limit int32) ([]GetProf
 			&i.Phone,
 			&i.ProfileUrl,
 			&i.IsAnalyzed,
-			&i.GeminiScore,
-			&i.ModelScore,
 			&i.AccessToken,
 			&i.AccountID,
 		); err != nil {
@@ -2009,7 +2004,7 @@ gemini_counts AS (
       WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
     END as score_range,
     COUNT(*) as gemini_count
-  FROM public.user_profile
+  FROM public.user_profile_category
   WHERE gemini_score IS NOT NULL
   GROUP BY score_range
 ),
@@ -2023,7 +2018,7 @@ model_counts AS (
       WHEN model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
     END as score_range,
     COUNT(*) as model_count
-  FROM public.user_profile
+  FROM public.user_profile_category
   WHERE model_score IS NOT NULL
   GROUP BY score_range
 )
@@ -2242,8 +2237,8 @@ func (q *Queries) GetTimeSeriesDataByCategory(ctx context.Context, categoryID in
 }
 
 const importProfile = `-- name: ImportProfile :one
-INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+INSERT INTO public.user_profile (facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 ON CONFLICT (facebook_id) DO UPDATE SET
     name = EXCLUDED.name,
     bio = EXCLUDED.bio,
@@ -2260,31 +2255,29 @@ ON CONFLICT (facebook_id) DO UPDATE SET
     email = EXCLUDED.email,
     phone = EXCLUDED.phone,
     profile_url = EXCLUDED.profile_url,
-    is_analyzed = EXCLUDED.is_analyzed,
-    gemini_score = EXCLUDED.gemini_score
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
+    is_analyzed = EXCLUDED.is_analyzed
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed
 `
 
 type ImportProfileParams struct {
-	FacebookID         string          `json:"facebook_id"`
-	Name               sql.NullString  `json:"name"`
-	Bio                sql.NullString  `json:"bio"`
-	Location           sql.NullString  `json:"location"`
-	Work               sql.NullString  `json:"work"`
-	Education          sql.NullString  `json:"education"`
-	RelationshipStatus sql.NullString  `json:"relationship_status"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	IsScanned          bool            `json:"is_scanned"`
-	Hometown           sql.NullString  `json:"hometown"`
-	Locale             string          `json:"locale"`
-	Gender             sql.NullString  `json:"gender"`
-	Birthday           sql.NullString  `json:"birthday"`
-	Email              sql.NullString  `json:"email"`
-	Phone              sql.NullString  `json:"phone"`
-	ProfileUrl         string          `json:"profile_url"`
-	IsAnalyzed         sql.NullBool    `json:"is_analyzed"`
-	GeminiScore        sql.NullFloat64 `json:"gemini_score"`
+	FacebookID         string         `json:"facebook_id"`
+	Name               sql.NullString `json:"name"`
+	Bio                sql.NullString `json:"bio"`
+	Location           sql.NullString `json:"location"`
+	Work               sql.NullString `json:"work"`
+	Education          sql.NullString `json:"education"`
+	RelationshipStatus sql.NullString `json:"relationship_status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	IsScanned          bool           `json:"is_scanned"`
+	Hometown           sql.NullString `json:"hometown"`
+	Locale             string         `json:"locale"`
+	Gender             sql.NullString `json:"gender"`
+	Birthday           sql.NullString `json:"birthday"`
+	Email              sql.NullString `json:"email"`
+	Phone              sql.NullString `json:"phone"`
+	ProfileUrl         string         `json:"profile_url"`
+	IsAnalyzed         sql.NullBool   `json:"is_analyzed"`
 }
 
 func (q *Queries) ImportProfile(ctx context.Context, arg ImportProfileParams) (UserProfile, error) {
@@ -2307,7 +2300,6 @@ func (q *Queries) ImportProfile(ctx context.Context, arg ImportProfileParams) (U
 		arg.Phone,
 		arg.ProfileUrl,
 		arg.IsAnalyzed,
-		arg.GeminiScore,
 	)
 	var i UserProfile
 	err := row.Scan(
@@ -2331,8 +2323,6 @@ func (q *Queries) ImportProfile(ctx context.Context, arg ImportProfileParams) (U
 		&i.Phone,
 		&i.ProfileUrl,
 		&i.IsAnalyzed,
-		&i.GeminiScore,
-		&i.ModelScore,
 	)
 	return i, err
 }
@@ -2360,7 +2350,7 @@ func (q *Queries) LogAction(ctx context.Context, arg LogActionParams) error {
 }
 
 const resetProfilesModelScore = `-- name: ResetProfilesModelScore :exec
-UPDATE public.user_profile
+UPDATE public.user_profile_category
 SET model_score = NULL
 `
 
@@ -2488,25 +2478,16 @@ func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) 
 	return i, err
 }
 
-const updateGeminiAnalysisProfile = `-- name: UpdateGeminiAnalysisProfile :one
+const updateGeminiAnalysisProfile = `-- name: UpdateGeminiAnalysisProfile :exec
 UPDATE public.user_profile
-SET gemini_score = $2,
-    is_analyzed = TRUE,
+SET is_analyzed = TRUE,
     updated_at = NOW()
 WHERE id = $1
-RETURNING gemini_score
 `
 
-type UpdateGeminiAnalysisProfileParams struct {
-	ID          int32           `json:"id"`
-	GeminiScore sql.NullFloat64 `json:"gemini_score"`
-}
-
-func (q *Queries) UpdateGeminiAnalysisProfile(ctx context.Context, arg UpdateGeminiAnalysisProfileParams) (sql.NullFloat64, error) {
-	row := q.db.QueryRowContext(ctx, updateGeminiAnalysisProfile, arg.ID, arg.GeminiScore)
-	var gemini_score sql.NullFloat64
-	err := row.Scan(&gemini_score)
-	return gemini_score, err
+func (q *Queries) UpdateGeminiAnalysisProfile(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, updateGeminiAnalysisProfile, id)
+	return err
 }
 
 const updateGeminiKeyUsage = `-- name: UpdateGeminiKeyUsage :one
@@ -2532,6 +2513,23 @@ func (q *Queries) UpdateGeminiKeyUsage(ctx context.Context, arg UpdateGeminiKeyU
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateGeminiScore = `-- name: UpdateGeminiScore :exec
+UPDATE public.user_profile_category
+SET gemini_score = $3
+WHERE user_profile_id = $1 AND category_id = $2
+`
+
+type UpdateGeminiScoreParams struct {
+	UserProfileID int32           `json:"user_profile_id"`
+	CategoryID    int32           `json:"category_id"`
+	GeminiScore   sql.NullFloat64 `json:"gemini_score"`
+}
+
+func (q *Queries) UpdateGeminiScore(ctx context.Context, arg UpdateGeminiScoreParams) error {
+	_, err := q.db.ExecContext(ctx, updateGeminiScore, arg.UserProfileID, arg.CategoryID, arg.GeminiScore)
+	return err
 }
 
 const updateGroupScannedAt = `-- name: UpdateGroupScannedAt :exec
@@ -2580,18 +2578,19 @@ func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (Model
 }
 
 const updateModelScore = `-- name: UpdateModelScore :exec
-UPDATE public.user_profile
-SET model_score = $2
-WHERE id = $1
+UPDATE public.user_profile_category
+SET model_score = $3
+WHERE user_profile_id = $1 AND category_id = $2
 `
 
 type UpdateModelScoreParams struct {
-	ID         int32           `json:"id"`
-	ModelScore sql.NullFloat64 `json:"model_score"`
+	UserProfileID int32           `json:"user_profile_id"`
+	CategoryID    int32           `json:"category_id"`
+	ModelScore    sql.NullFloat64 `json:"model_score"`
 }
 
 func (q *Queries) UpdateModelScore(ctx context.Context, arg UpdateModelScoreParams) error {
-	_, err := q.db.ExecContext(ctx, updateModelScore, arg.ID, arg.ModelScore)
+	_, err := q.db.ExecContext(ctx, updateModelScore, arg.UserProfileID, arg.CategoryID, arg.ModelScore)
 	return err
 }
 
@@ -2612,7 +2611,7 @@ SET updated_at = NOW(),
     email = $12,
     phone = $13
 WHERE id = $1
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed
 `
 
 type UpdateProfileAfterScanParams struct {
@@ -2669,8 +2668,6 @@ func (q *Queries) UpdateProfileAfterScan(ctx context.Context, arg UpdateProfileA
 		&i.Phone,
 		&i.ProfileUrl,
 		&i.IsAnalyzed,
-		&i.GeminiScore,
-		&i.ModelScore,
 	)
 	return i, err
 }
@@ -2680,7 +2677,7 @@ UPDATE public.user_profile
 SET updated_at = NOW(),
     is_scanned = TRUE
 WHERE id = $1
-RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed, gemini_score, model_score
+RETURNING id, facebook_id, name, bio, location, work, education, relationship_status, created_at, updated_at, scraped_by_id, is_scanned, hometown, locale, gender, birthday, email, phone, profile_url, is_analyzed
 `
 
 func (q *Queries) UpdateProfileScanStatus(ctx context.Context, id int32) (UserProfile, error) {
@@ -2707,8 +2704,6 @@ func (q *Queries) UpdateProfileScanStatus(ctx context.Context, id int32) (UserPr
 		&i.Phone,
 		&i.ProfileUrl,
 		&i.IsAnalyzed,
-		&i.GeminiScore,
-		&i.ModelScore,
 	)
 	return i, err
 }
@@ -2758,19 +2753,20 @@ func (q *Queries) UpsertConfig(ctx context.Context, arg UpsertConfigParams) (Con
 }
 
 const upsertEmbeddedProfiles = `-- name: UpsertEmbeddedProfiles :exec
-INSERT INTO public.embedded_profile (pid, embedding, created_at)
-VALUES ($1, $2, NOW())
-ON CONFLICT (pid) DO UPDATE SET
+INSERT INTO public.embedded_profile (pid, cid, embedding, created_at)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (pid, cid) DO UPDATE SET
     embedding = EXCLUDED.embedding,
     created_at = NOW()
 `
 
 type UpsertEmbeddedProfilesParams struct {
 	Pid       int32       `json:"pid"`
+	Cid       int32       `json:"cid"`
 	Embedding interface{} `json:"embedding"`
 }
 
 func (q *Queries) UpsertEmbeddedProfiles(ctx context.Context, arg UpsertEmbeddedProfilesParams) error {
-	_, err := q.db.ExecContext(ctx, upsertEmbeddedProfiles, arg.Pid, arg.Embedding)
+	_, err := q.db.ExecContext(ctx, upsertEmbeddedProfiles, arg.Pid, arg.Cid, arg.Embedding)
 	return err
 }

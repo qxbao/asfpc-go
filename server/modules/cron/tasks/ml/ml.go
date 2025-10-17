@@ -65,8 +65,8 @@ func (s *MLService) ScoreProfilesCronjob() {
 		}
 
 		profiles, err := queries.GetProfilesForScoring(ctx, db.GetProfilesForScoringParams{
-			CategoryID: category.ID,
-			Limit:      int32(limitInt),
+			Cid:   category.ID,
+			Limit: int32(limitInt),
 		})
 		if err != nil {
 			logger.Errorf("failed to get profiles for scoring (category %s): %v", category.Name, err)
@@ -103,7 +103,6 @@ func (s *MLService) ScoreProfilesCronjob() {
 
 		if err := json.Unmarshal([]byte(res), &resData); err != nil {
 			logger.Errorf("failed to unmarshal scoring result for category %s: %v", category.Name, err)
-			logger.Info("Raw response:", res)
 			continue
 		}
 
@@ -122,7 +121,8 @@ func (s *MLService) ScoreProfilesCronjob() {
 				continue
 			}
 			sem.Assign(updateScore, db.UpdateModelScoreParams{
-				ID: int32(strid),
+				UserProfileID: int32(strid),
+				CategoryID:    category.ID,
 				ModelScore: sql.NullFloat64{
 					Float64: float64(score),
 					Valid:   true,
