@@ -239,39 +239,29 @@ func (ds *DataRoutingService) GetDashboardStats(c echo.Context) error {
 func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 	queries := ds.Server.Queries
 	categoryIDStr := c.QueryParam("category_id")
-	
-	var data []db.GetTimeSeriesDataRow
-	var err error
-	
+
 	if categoryIDStr != "" {
 		categoryID, parseErr := strconv.Atoi(categoryIDStr)
 		if parseErr != nil {
 			return errorResponse(c, 400, "Invalid category_id parameter")
 		}
-		categoryData, err := queries.GetTimeSeriesDataByCategory(c.Request().Context(), int32(categoryID))
+		data, err := queries.GetTimeSeriesDataByCategory(c.Request().Context(), int32(categoryID))
 		if err != nil {
 			return errorResponse(c, 500, "failed to get time series data: "+err.Error())
 		}
-		
-		// Convert category data to standard format
-		data = make([]db.GetTimeSeriesDataRow, len(categoryData))
-		for i, row := range categoryData {
-			data[i] = db.GetTimeSeriesDataRow{
-				Date:  row.Date,
-				Count: row.Count,
-			}
+		if data == nil {
+			data = make([]db.GetTimeSeriesDataByCategoryRow, 0)
 		}
-	} else {
-		data, err = queries.GetTimeSeriesData(c.Request().Context())
-		if err != nil {
-			return errorResponse(c, 500, "failed to get time series data: "+err.Error())
-		}
+		return successResponse(c, data)
 	}
 
+	data, err := queries.GetTimeSeriesData(c.Request().Context())
+	if err != nil {
+		return errorResponse(c, 500, "failed to get time series data: "+err.Error())
+	}
 	if data == nil {
 		data = make([]db.GetTimeSeriesDataRow, 0)
 	}
-
 	return successResponse(c, data)
 }
 
@@ -281,13 +271,21 @@ type Data struct {
 	ModelScore  float64 `json:"model_score"`
 }
 
+// Helper to transform score distribution rows to Data format
+func transformScoreDistribution(scoreRange string, geminiCount, modelCount int64) Data {
+	return Data{
+		Range:       scoreRange,
+		GeminiScore: float64(geminiCount),
+		ModelScore:  float64(modelCount),
+	}
+}
+
 func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 	queries := ds.Server.Queries
 	categoryIDStr := c.QueryParam("category_id")
-	
-	var scoreDistribution []db.GetScoreDistributionRow
-	var err error
-	
+
+	data := make([]Data, 0)
+
 	if categoryIDStr != "" {
 		categoryID, parseErr := strconv.Atoi(categoryIDStr)
 		if parseErr != nil {
@@ -297,35 +295,21 @@ func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 		if err != nil {
 			return errorResponse(c, 500, "failed to get score distribution: "+err.Error())
 		}
-		
-		// Convert category data to standard format
-		scoreDistribution = make([]db.GetScoreDistributionRow, len(categoryData))
-		for i, row := range categoryData {
-			scoreDistribution[i] = db.GetScoreDistributionRow{
-				ScoreRange:  row.ScoreRange,
-				GeminiCount: row.GeminiCount,
-				ModelCount:  row.ModelCount,
-			}
+
+		// Transform to response format
+		for _, row := range categoryData {
+			data = append(data, transformScoreDistribution(row.ScoreRange, row.GeminiCount, row.ModelCount))
 		}
 	} else {
-		scoreDistribution, err = queries.GetScoreDistribution(c.Request().Context())
+		scoreDistribution, err := queries.GetScoreDistribution(c.Request().Context())
 		if err != nil {
 			return errorResponse(c, 500, "failed to get score distribution: "+err.Error())
 		}
-	}
 
-	if scoreDistribution == nil {
-		scoreDistribution = make([]db.GetScoreDistributionRow, 0)
-	}
-
-	// Map từ kết quả query
-	data := make([]Data, 0)
-	for _, row := range scoreDistribution {
-		data = append(data, Data{
-			Range:       row.ScoreRange,
-			GeminiScore: float64(row.GeminiCount),
-			ModelScore:  float64(row.ModelCount),
-		})
+		// Transform to response format
+		for _, row := range scoreDistribution {
+			data = append(data, transformScoreDistribution(row.ScoreRange, row.GeminiCount, row.ModelCount))
+		}
 	}
 
 	return successResponse(c, data)

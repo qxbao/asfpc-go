@@ -62,12 +62,11 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 
 	log.Infof("Fetching profiles with limit=%d, offset=%d", *dto.Limit, *dto.Page**dto.Limit)
 
-	var profiles []db.GetProfilesAnalysisPageRow
 	var count int64
 	var err error
 
 	if categoryID != nil {
-		// Get profiles filtered by category
+		// Get profiles filtered by category and count
 		categoryProfiles, err := queries.GetProfilesAnalysisPageByCategory(c.Request().Context(), db.GetProfilesAnalysisPageByCategoryParams{
 			CategoryID: *categoryID,
 			Limit:      *dto.Limit,
@@ -78,43 +77,40 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 			return errorResponse(c, 500, "failed to get profiles: "+err.Error())
 		}
 
-		// Convert to expected format
-		profiles = make([]db.GetProfilesAnalysisPageRow, len(categoryProfiles))
-		for i, p := range categoryProfiles {
-			profiles[i] = db.GetProfilesAnalysisPageRow{
-				ID:           p.ID,
-				FacebookID:   p.FacebookID,
-				Name:         p.Name,
-				IsAnalyzed:   p.IsAnalyzed,
-				GeminiScore:  p.GeminiScore,
-				ModelScore:   p.ModelScore,
-				Categories:   p.Categories,
-				NonNullCount: p.NonNullCount,
-			}
-		}
-
-		// Count profiles in specific category
 		count, err = queries.CountProfilesInCategory(c.Request().Context(), *categoryID)
 		if err != nil {
 			log.Errorf("Failed to count profiles in category: %v", err)
 			return errorResponse(c, 500, "failed to count profiles: "+err.Error())
 		}
-	} else {
-		// Get all profiles (original behavior)
-		profiles, err = queries.GetProfilesAnalysisPage(c.Request().Context(), db.GetProfilesAnalysisPageParams{
-			Limit:  *dto.Limit,
-			Offset: *dto.Page * *dto.Limit,
-		})
-		if err != nil {
-			log.Errorf("Failed to get profiles from DB: %v", err)
-			return errorResponse(c, 500, "failed to get profiles: "+err.Error())
+
+		log.Infof("Retrieved %d profiles from database", len(categoryProfiles))
+		log.Infof("Total profile count: %d", count)
+
+		if categoryProfiles == nil {
+			categoryProfiles = make([]db.GetProfilesAnalysisPageByCategoryRow, 0)
 		}
 
-		count, err = queries.CountProfiles(c.Request().Context())
-		if err != nil {
-			log.Errorf("Failed to count profiles: %v", err)
-			return errorResponse(c, 500, "failed to count profiles: "+err.Error())
-		}
+		log.Info("Returning response")
+		return c.JSON(200, map[string]any{
+			"total": count,
+			"data":  categoryProfiles,
+		})
+	}
+
+	// Get all profiles (original behavior)
+	profiles, err := queries.GetProfilesAnalysisPage(c.Request().Context(), db.GetProfilesAnalysisPageParams{
+		Limit:  *dto.Limit,
+		Offset: *dto.Page * *dto.Limit,
+	})
+	if err != nil {
+		log.Errorf("Failed to get profiles from DB: %v", err)
+		return errorResponse(c, 500, "failed to get profiles: "+err.Error())
+	}
+
+	count, err = queries.CountProfiles(c.Request().Context())
+	if err != nil {
+		log.Errorf("Failed to count profiles: %v", err)
+		return errorResponse(c, 500, "failed to count profiles: "+err.Error())
 	}
 
 	log.Infof("Retrieved %d profiles from database", len(profiles))
