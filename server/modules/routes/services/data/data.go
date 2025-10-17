@@ -208,7 +208,14 @@ func (ds *DataRoutingService) GetLogs(c echo.Context) error {
 
 func (ds *DataRoutingService) GetDashboardStats(c echo.Context) error {
 	queries := ds.Server.Queries
-	stats, err := queries.GetDashboardStats(c.Request().Context())
+	dto := new(infras.ChartRequestDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+
+	stats, err := queries.GetDashboardStats(c.Request().Context(), dto.CategoryID)
 
 	if err != nil {
 		return c.JSON(500, map[string]any{
@@ -223,7 +230,14 @@ func (ds *DataRoutingService) GetDashboardStats(c echo.Context) error {
 
 func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 	queries := ds.Server.Queries
-	data, err := queries.GetTimeSeriesData(c.Request().Context())
+	dto := new(infras.ChartRequestDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+
+	data, err := queries.GetTimeSeriesData(c.Request().Context(), dto.CategoryID)
 
 	if err != nil {
 		return c.JSON(500, map[string]any{
@@ -248,7 +262,14 @@ type Data struct {
 
 func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 	queries := ds.Server.Queries
-	scoreDistribution, err := queries.GetScoreDistribution(c.Request().Context())
+	dto := new(infras.ChartRequestDTO)
+	if err := c.Bind(dto); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error": "Invalid request body",
+		})
+	}
+
+	scoreDistribution, err := queries.GetScoreDistribution(c.Request().Context(), dto.CategoryID)
 
 	if err != nil {
 		return c.JSON(500, map[string]any{

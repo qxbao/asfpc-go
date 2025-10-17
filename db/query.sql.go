@@ -863,9 +863,9 @@ SELECT
   (SELECT COUNT(*) FROM public.comment) AS total_comments,
   (SELECT COUNT(*) FROM public.post) AS total_posts,
   (SELECT COUNT(*) FROM public.user_profile) AS total_profiles,
-  (SELECT COUNT(*) FROM public.embedded_profile) AS embedded_count,
+  (SELECT COUNT(*) FROM public.embedded_profile WHERE cid = $1) AS embedded_count,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_scanned = true) AS scanned_profiles,
-  (SELECT COUNT(DISTINCT user_profile_id) FROM public.user_profile_category WHERE model_score IS NOT NULL) AS scored_profiles,
+  (SELECT COUNT(DISTINCT user_profile_id) FROM public.user_profile_category WHERE model_score IS NOT NULL AND category_id = $1) AS scored_profiles,
   (SELECT COUNT(*) FROM public.user_profile WHERE is_analyzed = true) AS analyzed_profiles,
   (SELECT COUNT(*) FROM public.account) AS total_accounts,
   (SELECT COUNT(*) FROM public.account WHERE is_block = false and access_token IS NOT NULL) AS active_accounts,
@@ -886,8 +886,8 @@ type GetDashboardStatsRow struct {
 	BlockedAccounts  int64 `json:"blocked_accounts"`
 }
 
-func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, error) {
-	row := q.db.QueryRowContext(ctx, getDashboardStats)
+func (q *Queries) GetDashboardStats(ctx context.Context, cid int32) (GetDashboardStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getDashboardStats, cid)
 	var i GetDashboardStatsRow
 	err := row.Scan(
 		&i.TotalGroups,
@@ -1923,8 +1923,8 @@ gemini_counts AS (
       WHEN gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
     END as score_range,
     COUNT(*) as gemini_count
-  FROM public.user_profile_category
-  WHERE gemini_score IS NOT NULL
+  FROM public.user_profile_category upc
+  WHERE upc.gemini_score IS NOT NULL AND upc.category_id = $1
   GROUP BY score_range
 ),
 model_counts AS (
@@ -1938,7 +1938,7 @@ model_counts AS (
     END as score_range,
     COUNT(*) as model_count
   FROM public.user_profile_category
-  WHERE model_score IS NOT NULL
+  WHERE model_score IS NOT NULL AND category_id = $1
   GROUP BY score_range
 )
 SELECT 
@@ -1957,8 +1957,8 @@ type GetScoreDistributionRow struct {
 	ModelCount  int64  `json:"model_count"`
 }
 
-func (q *Queries) GetScoreDistribution(ctx context.Context) ([]GetScoreDistributionRow, error) {
-	rows, err := q.db.QueryContext(ctx, getScoreDistribution)
+func (q *Queries) GetScoreDistribution(ctx context.Context, categoryID int32) ([]GetScoreDistributionRow, error) {
+	rows, err := q.db.QueryContext(ctx, getScoreDistribution, categoryID)
 	if err != nil {
 		return nil, err
 	}
@@ -2002,11 +2002,13 @@ func (q *Queries) GetStats(ctx context.Context) (GetStatsRow, error) {
 
 const getTimeSeriesData = `-- name: GetTimeSeriesData :many
 SELECT 
-  DATE_TRUNC('day', updated_at)::date as date,
-  COUNT(*) as count
-FROM public.user_profile 
-WHERE updated_at >= NOW() - INTERVAL '6 months'
-GROUP BY DATE_TRUNC('day', updated_at)
+  DATE_TRUNC('day', up.updated_at)::date as date,
+  COUNT(DISTINCT up.id) as count
+FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.updated_at >= NOW() - INTERVAL '6 months'
+  AND upc.category_id = $1
+GROUP BY DATE_TRUNC('day', up.updated_at)
 ORDER BY date
 `
 
@@ -2015,8 +2017,8 @@ type GetTimeSeriesDataRow struct {
 	Count int64     `json:"count"`
 }
 
-func (q *Queries) GetTimeSeriesData(ctx context.Context) ([]GetTimeSeriesDataRow, error) {
-	rows, err := q.db.QueryContext(ctx, getTimeSeriesData)
+func (q *Queries) GetTimeSeriesData(ctx context.Context, categoryID int32) ([]GetTimeSeriesDataRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTimeSeriesData, categoryID)
 	if err != nil {
 		return nil, err
 	}
