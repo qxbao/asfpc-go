@@ -3,6 +3,7 @@ package analysis
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
@@ -36,71 +37,89 @@ func (as *AnalysisRoutingService) GetProfiles(c echo.Context) error {
 		*dto.Limit = 10
 	}
 
+	// Get category_id from query params if provided
+	categoryIDStr := c.QueryParam("category_id")
+	var categoryID *int32
+	if categoryIDStr != "" {
+		if catID, err := strconv.ParseInt(categoryIDStr, 10, 32); err == nil {
+			categoryID = new(int32)
+			*categoryID = int32(catID)
+			log.Infof("Filtering by category ID: %d", *categoryID)
+		}
+	}
+
 	log.Infof("Fetching profiles with limit=%d, offset=%d", *dto.Limit, *dto.Page**dto.Limit)
 
-	profiles, err := queries.GetProfilesAnalysisPage(c.Request().Context(), db.GetProfilesAnalysisPageParams{
-		Limit:  *dto.Limit,
-		Offset: *dto.Page * *dto.Limit,
-	})
+	var profiles []db.GetProfilesAnalysisPageRow
+	var count int64
+	var err error
 
-	if err != nil {
-		log.Errorf("Failed to get profiles from DB: %v", err)
-		return c.JSON(500, map[string]any{
-			"error": "failed to get profiles: " + err.Error(),
+	if categoryID != nil {
+		// Get profiles filtered by category
+		categoryProfiles, err := queries.GetProfilesAnalysisPageByCategory(c.Request().Context(), db.GetProfilesAnalysisPageByCategoryParams{
+			CategoryID: *categoryID,
+			Limit:      *dto.Limit,
+			Offset:     *dto.Page * *dto.Limit,
 		})
+		if err != nil {
+			log.Errorf("Failed to get profiles by category from DB: %v", err)
+			return c.JSON(500, map[string]any{
+				"error": "failed to get profiles: " + err.Error(),
+			})
+		}
+
+		// Convert to expected format
+		profiles = make([]db.GetProfilesAnalysisPageRow, len(categoryProfiles))
+		for i, p := range categoryProfiles {
+			profiles[i] = db.GetProfilesAnalysisPageRow{
+				ID:           p.ID,
+				FacebookID:   p.FacebookID,
+				Name:         p.Name,
+				IsAnalyzed:   p.IsAnalyzed,
+				GeminiScore:  p.GeminiScore,
+				ModelScore:   p.ModelScore,
+				Categories:   p.Categories,
+				NonNullCount: p.NonNullCount,
+			}
+		}
+
+		// Count profiles in specific category
+		count, err = queries.CountProfilesInCategory(c.Request().Context(), *categoryID)
+		if err != nil {
+			log.Errorf("Failed to count profiles in category: %v", err)
+			return c.JSON(500, map[string]any{
+				"error": "failed to count profiles: " + err.Error(),
+			})
+		}
+	} else {
+		// Get all profiles (original behavior)
+		profiles, err = queries.GetProfilesAnalysisPage(c.Request().Context(), db.GetProfilesAnalysisPageParams{
+			Limit:  *dto.Limit,
+			Offset: *dto.Page * *dto.Limit,
+		})
+		if err != nil {
+			log.Errorf("Failed to get profiles from DB: %v", err)
+			return c.JSON(500, map[string]any{
+				"error": "failed to get profiles: " + err.Error(),
+			})
+		}
+
+		count, err = queries.CountProfiles(c.Request().Context())
+		if err != nil {
+			log.Errorf("Failed to count profiles: %v", err)
+			return c.JSON(500, map[string]any{
+				"error": "failed to count profiles: " + err.Error(),
+			})
+		}
 	}
 
 	log.Infof("Retrieved %d profiles from database", len(profiles))
-
-	// Count total profiles in category 1 for debugging
-	categoryCount, err := queries.CountProfilesInCategory(c.Request().Context(), 1)
-	if err != nil {
-		log.Errorf("Failed to count profiles in category: %v", err)
-	} else {
-		log.Infof("Total profiles in category 1: %d", categoryCount)
-	}
-
-	// Log the first few profiles' categories to debug
-	categoriesFound := 0
-	for i := 0; i < len(profiles) && i < 10; i++ {
-		categoriesStr := string(profiles[i].Categories)
-		if categoriesStr != "[]" && categoriesStr != "" {
-			categoriesFound++
-			log.Infof("Profile %d (ID=%d, FacebookID=%s): Categories=%s",
-				i, profiles[i].ID, profiles[i].FacebookID, categoriesStr)
-		}
-	}
-	log.Infof("Found %d profiles with categories in first 10 results", categoriesFound)
-
-	count, err := queries.CountProfiles(c.Request().Context())
-	if err != nil {
-		log.Errorf("Failed to count profiles: %v", err)
-		return c.JSON(500, map[string]any{
-			"error": "failed to count profiles: " + err.Error(),
-		})
-	}
-
 	log.Infof("Total profile count: %d", count)
 
 	if profiles == nil {
 		profiles = make([]db.GetProfilesAnalysisPageRow, 0)
 	}
 
-	log.Info("About to return JSON response")
-
-	// Try to marshal manually to see if there's an error
-	jsonBytes, err := json.Marshal(map[string]any{
-		"total": count,
-		"data":  profiles,
-	})
-	if err != nil {
-		log.Errorf("Failed to marshal JSON response: %v", err)
-		return c.JSON(500, map[string]any{
-			"error": "failed to marshal response: " + err.Error(),
-		})
-	}
-
-	log.Infof("Successfully marshaled JSON, size: %d bytes", len(jsonBytes))
 	log.Info("Returning response")
 
 	return c.JSON(200, map[string]any{

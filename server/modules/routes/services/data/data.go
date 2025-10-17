@@ -2,6 +2,7 @@ package data
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/qxbao/asfpc/db"
@@ -223,12 +224,40 @@ func (ds *DataRoutingService) GetDashboardStats(c echo.Context) error {
 
 func (ds *DataRoutingService) GetTimeSeriesData(c echo.Context) error {
 	queries := ds.Server.Queries
-	data, err := queries.GetTimeSeriesData(c.Request().Context())
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get time series data: " + err.Error(),
-		})
+	categoryIDStr := c.QueryParam("category_id")
+	
+	var data []db.GetTimeSeriesDataRow
+	var err error
+	
+	if categoryIDStr != "" {
+		categoryID, parseErr := strconv.Atoi(categoryIDStr)
+		if parseErr != nil {
+			return c.JSON(400, map[string]any{
+				"error": "Invalid category_id parameter",
+			})
+		}
+		categoryData, err := queries.GetTimeSeriesDataByCategory(c.Request().Context(), int32(categoryID))
+		if err != nil {
+			return c.JSON(500, map[string]any{
+				"error": "failed to get time series data: " + err.Error(),
+			})
+		}
+		
+		// Convert category data to standard format
+		data = make([]db.GetTimeSeriesDataRow, len(categoryData))
+		for i, row := range categoryData {
+			data[i] = db.GetTimeSeriesDataRow{
+				Date:  row.Date,
+				Count: row.Count,
+			}
+		}
+	} else {
+		data, err = queries.GetTimeSeriesData(c.Request().Context())
+		if err != nil {
+			return c.JSON(500, map[string]any{
+				"error": "failed to get time series data: " + err.Error(),
+			})
+		}
 	}
 
 	if data == nil {
@@ -248,12 +277,41 @@ type Data struct {
 
 func (ds *DataRoutingService) GetScoreDistribution(c echo.Context) error {
 	queries := ds.Server.Queries
-	scoreDistribution, err := queries.GetScoreDistribution(c.Request().Context())
-
-	if err != nil {
-		return c.JSON(500, map[string]any{
-			"error": "failed to get score distribution: " + err.Error(),
-		})
+	categoryIDStr := c.QueryParam("category_id")
+	
+	var scoreDistribution []db.GetScoreDistributionRow
+	var err error
+	
+	if categoryIDStr != "" {
+		categoryID, parseErr := strconv.Atoi(categoryIDStr)
+		if parseErr != nil {
+			return c.JSON(400, map[string]any{
+				"error": "Invalid category_id parameter",
+			})
+		}
+		categoryData, err := queries.GetScoreDistributionByCategory(c.Request().Context(), int32(categoryID))
+		if err != nil {
+			return c.JSON(500, map[string]any{
+				"error": "failed to get score distribution: " + err.Error(),
+			})
+		}
+		
+		// Convert category data to standard format
+		scoreDistribution = make([]db.GetScoreDistributionRow, len(categoryData))
+		for i, row := range categoryData {
+			scoreDistribution[i] = db.GetScoreDistributionRow{
+				ScoreRange:  row.ScoreRange,
+				GeminiCount: row.GeminiCount,
+				ModelCount:  row.ModelCount,
+			}
+		}
+	} else {
+		scoreDistribution, err = queries.GetScoreDistribution(c.Request().Context())
+		if err != nil {
+			return c.JSON(500, map[string]any{
+				"error": "failed to get score distribution: " + err.Error(),
+			})
+		}
 	}
 
 	if scoreDistribution == nil {

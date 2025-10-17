@@ -1607,6 +1607,87 @@ func (q *Queries) GetProfilesAnalysisPage(ctx context.Context, arg GetProfilesAn
 	return items, nil
 }
 
+const getProfilesAnalysisPageByCategory = `-- name: GetProfilesAnalysisPageByCategory :many
+SELECT 
+  up.id,
+  up.facebook_id,
+  up.name,
+  up.is_analyzed,
+  up.gemini_score,
+  up.model_score,
+  (COALESCE((
+    SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'description', c.description))
+    FROM public.user_profile_category upc
+    JOIN public.category c ON c.id = upc.category_id
+    WHERE upc.user_profile_id = up.id
+  ), '[]'::json))::jsonb as categories,
+  ((COALESCE(up.bio, '') != '')::int +
+  (COALESCE(up.location, '') != '')::int +
+  (COALESCE(up.work, '') != '')::int +
+  (COALESCE(up.locale, '') != '')::int +
+  (COALESCE(up.education, '') != '')::int +
+  (COALESCE(up.relationship_status, '') != '')::int +
+  (COALESCE(up.hometown, '') != '')::int +
+  (COALESCE(up.gender, '') != '')::int +
+  (COALESCE(up.birthday, '') != '')::int +
+  (COALESCE(up.email, '') != '')::int +
+  (COALESCE(up.phone, '') != '')::int)::int AS non_null_count
+FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.is_scanned = true AND upc.category_id = $1
+ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
+LIMIT $2 OFFSET $3
+`
+
+type GetProfilesAnalysisPageByCategoryParams struct {
+	CategoryID int32 `json:"category_id"`
+	Limit      int32 `json:"limit"`
+	Offset     int32 `json:"offset"`
+}
+
+type GetProfilesAnalysisPageByCategoryRow struct {
+	ID           int32           `json:"id"`
+	FacebookID   string          `json:"facebook_id"`
+	Name         sql.NullString  `json:"name"`
+	IsAnalyzed   sql.NullBool    `json:"is_analyzed"`
+	GeminiScore  sql.NullFloat64 `json:"gemini_score"`
+	ModelScore   sql.NullFloat64 `json:"model_score"`
+	Categories   NullableJSON    `json:"categories"`
+	NonNullCount int32           `json:"non_null_count"`
+}
+
+func (q *Queries) GetProfilesAnalysisPageByCategory(ctx context.Context, arg GetProfilesAnalysisPageByCategoryParams) ([]GetProfilesAnalysisPageByCategoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, getProfilesAnalysisPageByCategory, arg.CategoryID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProfilesAnalysisPageByCategoryRow
+	for rows.Next() {
+		var i GetProfilesAnalysisPageByCategoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FacebookID,
+			&i.Name,
+			&i.IsAnalyzed,
+			&i.GeminiScore,
+			&i.ModelScore,
+			&i.Categories,
+			&i.NonNullCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfilesForExport = `-- name: GetProfilesForExport :many
 SELECT up.id, up.facebook_id, up.name, up.bio, up.location, up.work, up.education, up.relationship_status, up.created_at, up.updated_at, up.scraped_by_id, up.is_scanned, up.hometown, up.locale, up.gender, up.birthday, up.email, up.phone, up.profile_url, up.is_analyzed, up.gemini_score, up.model_score, ep.embedding FROM public.user_profile up
 JOIN public.embedded_profile ep ON up.id = ep.pid
@@ -1985,6 +2066,83 @@ func (q *Queries) GetScoreDistribution(ctx context.Context) ([]GetScoreDistribut
 	return items, nil
 }
 
+const getScoreDistributionByCategory = `-- name: GetScoreDistributionByCategory :many
+WITH score_ranges AS (
+  SELECT '0.0-0.2' as range UNION ALL
+  SELECT '0.2-0.4' UNION ALL
+  SELECT '0.4-0.6' UNION ALL
+  SELECT '0.6-0.8' UNION ALL
+  SELECT '0.8-1.0'
+),
+gemini_counts AS (
+  SELECT
+    CASE 
+      WHEN up.gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN up.gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN up.gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN up.gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN up.gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    END as score_range,
+    COUNT(*) as gemini_count
+  FROM public.user_profile up
+  JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+  WHERE up.gemini_score IS NOT NULL AND upc.category_id = $1
+  GROUP BY score_range
+),
+model_counts AS (
+  SELECT
+    CASE 
+      WHEN up.model_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN up.model_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN up.model_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN up.model_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN up.model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    END as score_range,
+    COUNT(*) as model_count
+  FROM public.user_profile up
+  JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+  WHERE up.model_score IS NOT NULL AND upc.category_id = $1
+  GROUP BY score_range
+)
+SELECT 
+  sr.range as score_range,
+  COALESCE(gc.gemini_count, 0) as gemini_count,
+  COALESCE(mc.model_count, 0) as model_count
+FROM score_ranges sr
+LEFT JOIN gemini_counts gc ON sr.range = gc.score_range
+LEFT JOIN model_counts mc ON sr.range = mc.score_range
+ORDER BY sr.range
+`
+
+type GetScoreDistributionByCategoryRow struct {
+	ScoreRange  string `json:"score_range"`
+	GeminiCount int64  `json:"gemini_count"`
+	ModelCount  int64  `json:"model_count"`
+}
+
+func (q *Queries) GetScoreDistributionByCategory(ctx context.Context, categoryID int32) ([]GetScoreDistributionByCategoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, getScoreDistributionByCategory, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetScoreDistributionByCategoryRow
+	for rows.Next() {
+		var i GetScoreDistributionByCategoryRow
+		if err := rows.Scan(&i.ScoreRange, &i.GeminiCount, &i.ModelCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getStats = `-- name: GetStats :one
 SELECT
   (SELECT COUNT(*) FROM public."group") AS total_groups,
@@ -2029,6 +2187,46 @@ func (q *Queries) GetTimeSeriesData(ctx context.Context) ([]GetTimeSeriesDataRow
 	var items []GetTimeSeriesDataRow
 	for rows.Next() {
 		var i GetTimeSeriesDataRow
+		if err := rows.Scan(&i.Date, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTimeSeriesDataByCategory = `-- name: GetTimeSeriesDataByCategory :many
+SELECT 
+  DATE_TRUNC('day', up.updated_at)::date as date,
+  COUNT(*) as count
+FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.updated_at >= NOW() - INTERVAL '6 months'
+  AND upc.category_id = $1
+GROUP BY DATE_TRUNC('day', up.updated_at)
+ORDER BY date
+`
+
+type GetTimeSeriesDataByCategoryRow struct {
+	Date  time.Time `json:"date"`
+	Count int64     `json:"count"`
+}
+
+func (q *Queries) GetTimeSeriesDataByCategory(ctx context.Context, categoryID int32) ([]GetTimeSeriesDataByCategoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTimeSeriesDataByCategory, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTimeSeriesDataByCategoryRow
+	for rows.Next() {
+		var i GetTimeSeriesDataByCategoryRow
 		if err := rows.Scan(&i.Date, &i.Count); err != nil {
 			return nil, err
 		}

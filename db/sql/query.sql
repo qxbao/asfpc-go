@@ -162,6 +162,37 @@ WHERE up.is_scanned = true
 ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
 LIMIT $1 OFFSET $2;
 
+-- name: GetProfilesAnalysisPageByCategory :many
+SELECT 
+  up.id,
+  up.facebook_id,
+  up.name,
+  up.is_analyzed,
+  up.gemini_score,
+  up.model_score,
+  (COALESCE((
+    SELECT json_agg(json_build_object('id', c.id, 'name', c.name, 'description', c.description))
+    FROM public.user_profile_category upc
+    JOIN public.category c ON c.id = upc.category_id
+    WHERE upc.user_profile_id = up.id
+  ), '[]'::json))::jsonb as categories,
+  ((COALESCE(up.bio, '') != '')::int +
+  (COALESCE(up.location, '') != '')::int +
+  (COALESCE(up.work, '') != '')::int +
+  (COALESCE(up.locale, '') != '')::int +
+  (COALESCE(up.education, '') != '')::int +
+  (COALESCE(up.relationship_status, '') != '')::int +
+  (COALESCE(up.hometown, '') != '')::int +
+  (COALESCE(up.gender, '') != '')::int +
+  (COALESCE(up.birthday, '') != '')::int +
+  (COALESCE(up.email, '') != '')::int +
+  (COALESCE(up.phone, '') != '')::int)::int AS non_null_count
+FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.is_scanned = true AND upc.category_id = $1
+ORDER BY up.model_score DESC NULLS LAST, up.gemini_score DESC NULLS LAST, non_null_count DESC, up.updated_at ASC
+LIMIT $2 OFFSET $3;
+
 -- name: GetProfilesAnalysisCronjob :many
 SELECT up.*,
   upc.category_id,
@@ -493,6 +524,17 @@ WHERE updated_at >= NOW() - INTERVAL '6 months'
 GROUP BY DATE_TRUNC('day', updated_at)
 ORDER BY date;
 
+-- name: GetTimeSeriesDataByCategory :many
+SELECT 
+  DATE_TRUNC('day', up.updated_at)::date as date,
+  COUNT(*) as count
+FROM public.user_profile up
+JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+WHERE up.updated_at >= NOW() - INTERVAL '6 months'
+  AND upc.category_id = $1
+GROUP BY DATE_TRUNC('day', up.updated_at)
+ORDER BY date;
+
 -- name: GetScoreDistribution :many
 WITH score_ranges AS (
   SELECT '0.0-0.2' as range UNION ALL
@@ -527,6 +569,53 @@ model_counts AS (
     COUNT(*) as model_count
   FROM public.user_profile
   WHERE model_score IS NOT NULL
+  GROUP BY score_range
+)
+SELECT 
+  sr.range as score_range,
+  COALESCE(gc.gemini_count, 0) as gemini_count,
+  COALESCE(mc.model_count, 0) as model_count
+FROM score_ranges sr
+LEFT JOIN gemini_counts gc ON sr.range = gc.score_range
+LEFT JOIN model_counts mc ON sr.range = mc.score_range
+ORDER BY sr.range;
+
+-- name: GetScoreDistributionByCategory :many
+WITH score_ranges AS (
+  SELECT '0.0-0.2' as range UNION ALL
+  SELECT '0.2-0.4' UNION ALL
+  SELECT '0.4-0.6' UNION ALL
+  SELECT '0.6-0.8' UNION ALL
+  SELECT '0.8-1.0'
+),
+gemini_counts AS (
+  SELECT
+    CASE 
+      WHEN up.gemini_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN up.gemini_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN up.gemini_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN up.gemini_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN up.gemini_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    END as score_range,
+    COUNT(*) as gemini_count
+  FROM public.user_profile up
+  JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+  WHERE up.gemini_score IS NOT NULL AND upc.category_id = $1
+  GROUP BY score_range
+),
+model_counts AS (
+  SELECT
+    CASE 
+      WHEN up.model_score BETWEEN 0.0 AND 0.2 THEN '0.0-0.2'
+      WHEN up.model_score BETWEEN 0.2 AND 0.4 THEN '0.2-0.4'
+      WHEN up.model_score BETWEEN 0.4 AND 0.6 THEN '0.4-0.6'
+      WHEN up.model_score BETWEEN 0.6 AND 0.8 THEN '0.6-0.8'
+      WHEN up.model_score BETWEEN 0.8 AND 1.0 THEN '0.8-1.0'
+    END as score_range,
+    COUNT(*) as model_count
+  FROM public.user_profile up
+  JOIN public.user_profile_category upc ON up.id = upc.user_profile_id
+  WHERE up.model_score IS NOT NULL AND upc.category_id = $1
   GROUP BY score_range
 )
 SELECT 
